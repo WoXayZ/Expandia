@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:flat_cache",
+  "argument": {
+    "type": "minecraft:cache_2d",
+    "argument": {
+      "type": "expandia:land_mask",
+      "mode": "offset",
+      "argument": "expandia:vanilla/offset"
+    }
+  }
+}

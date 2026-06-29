@@ -1,0 +1,5 @@
+{
+  "type": "expandia:land_mask",
+  "mode": "vegetation",
+  "argument": "expandia:vanilla/vegetation"
+}

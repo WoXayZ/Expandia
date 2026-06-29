@@ -1,0 +1,5 @@
+{
+  "type": "expandia:land_mask",
+  "mode": "continents",
+  "argument": "expandia:vanilla/continents"
+}

@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:range_choice",
+  "input": "minecraft:y",
+  "min_inclusive": -64,
+  "max_exclusive": 0,
+  "when_in_range": "expandia:vanilla/temperature",
+  "when_out_of_range": "expandia:island/temperature"
+}

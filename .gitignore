@@ -1,0 +1,26 @@
+# Gradle
+.gradle/
+build/
+out/
+repo/
+
+# ModDevGradle / NeoForge runs
+run/
+runs/
+run-data/
+src/generated/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.eclipse/
+*.launch
+.settings/
+.classpath
+.project
+bin/
+
+# OS
+.DS_Store
+Thumbs.db

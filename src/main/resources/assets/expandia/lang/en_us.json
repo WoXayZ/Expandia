@@ -1,0 +1,19 @@
+{
+  "expandia.command.islands": "Expandia: %s island(s), %s blocks radius each.",
+  "expandia.command.unlock": "Added %s island(s). Total: %s.",
+  "expandia.command.reset": "Expandia reset. %s island(s) remaining.",
+  "expandia.command.reload": "Expandia config reloaded. %s island(s).",
+  "expandia.message.island_revealed": "Expandia: a new island appeared at (%s, %s)!",
+  "expandia.message.advancement_already_counted": "Expandia: this advancement has already granted an island.",
+
+  "key.category.expandia.main": "Expandia",
+  "key.expandia.open_screen": "Open the island advancements",
+
+  "expandia.screen.title": "Island Advancements",
+  "expandia.screen.subtitle": "%s / %s islands unlocked",
+  "expandia.screen.status.unlocked": "Unlocked",
+  "expandia.screen.status.locked": "Locked",
+  "expandia.screen.empty": "No island advancements are configured.",
+  "expandia.screen.no_description": "Complete this advancement to reveal a new island.",
+  "expandia.screen.loading": "Loading\u2026"
+}

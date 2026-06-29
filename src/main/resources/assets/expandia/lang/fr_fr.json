@@ -1,0 +1,19 @@
+{
+  "expandia.command.islands": "Expandia : %s île(s), rayon %s blocs chacune.",
+  "expandia.command.unlock": "Ajout de %s île(s). Total : %s.",
+  "expandia.command.reset": "Expandia réinitialisé. Il reste %s île(s).",
+  "expandia.command.reload": "Config Expandia rechargée. %s île(s).",
+  "expandia.message.island_revealed": "Expandia : une nouvelle île est apparue en (%s, %s) !",
+  "expandia.message.advancement_already_counted": "Expandia : cet advancement a déjà donné une île.",
+
+  "key.category.expandia.main": "Expandia",
+  "key.expandia.open_screen": "Ouvrir les advancements d'îles",
+
+  "expandia.screen.title": "Advancements d'îles",
+  "expandia.screen.subtitle": "%s / %s îles débloquées",
+  "expandia.screen.status.unlocked": "Débloquée",
+  "expandia.screen.status.locked": "À débloquer",
+  "expandia.screen.empty": "Aucun advancement d'île n'est configuré.",
+  "expandia.screen.no_description": "Termine cet advancement pour révéler une nouvelle île.",
+  "expandia.screen.loading": "Chargement\u2026"
+}

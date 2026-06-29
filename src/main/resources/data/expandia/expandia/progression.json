@@ -1,0 +1,26 @@
+{
+  "baseRadius": 96,
+  "transitionWidth": 24,
+  "generateStructures": false,
+  "dimensions": [
+    "minecraft:overworld"
+  ],
+  "advancements": [
+    "minecraft:story/mine_stone",
+    "minecraft:story/upgrade_tools",
+    "minecraft:story/smelt_iron",
+    "minecraft:story/iron_tools",
+    "minecraft:story/mine_diamond",
+    "minecraft:story/obtain_armor",
+    "minecraft:story/lava_bucket",
+    "minecraft:story/form_obsidian",
+    "minecraft:story/enter_the_nether",
+    "minecraft:nether/root",
+    "minecraft:nether/obtain_blaze_rod",
+    "minecraft:nether/find_fortress",
+    "minecraft:story/enchant_item",
+    "minecraft:story/enter_the_end",
+    "minecraft:end/root",
+    "minecraft:end/kill_dragon"
+  ]
+}

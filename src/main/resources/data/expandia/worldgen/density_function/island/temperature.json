@@ -1,0 +1,5 @@
+{
+  "type": "expandia:land_mask",
+  "mode": "temperature",
+  "argument": "expandia:vanilla/temperature"
+}

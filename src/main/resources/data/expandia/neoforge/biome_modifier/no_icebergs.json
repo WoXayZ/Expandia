@@ -1,0 +1,8 @@
+{
+  "type": "neoforge:remove_features",
+  "biomes": "#minecraft:is_ocean",
+  "features": [
+    "minecraft:iceberg_packed",
+    "minecraft:iceberg_blue"
+  ]
+}
