@@ -24,7 +24,7 @@ without a restart. Progress is saved per world.
 - **Biome-mod friendly**: Expandia only modifies the land-mask density functions and forces the open
   ocean biome; it never overrides biome selection on land, so it works alongside **Terralith** and
   other biome mods.
-- Optional structure generation (off by default).
+- Overworld structures are always disabled.
 - Per-world persistence via vanilla `SavedData`.
 
 ---
@@ -73,10 +73,6 @@ On first launch Expandia writes `config/expandia/progression.json`:
 {
   "baseRadius": 96,
   "transitionWidth": 24,
-  "generateStructures": false,
-  "dimensions": [
-    "minecraft:overworld"
-  ],
   "advancements": [
     "minecraft:story/mine_stone",
     "minecraft:story/upgrade_tools",
@@ -102,8 +98,6 @@ On first launch Expandia writes `config/expandia/progression.json`:
 | --- | --- |
 | `baseRadius` | Radius in blocks of every island (the spawn island and each unlocked one). |
 | `transitionWidth` | Width in blocks of the smooth land-to-ocean shoreline band. |
-| `generateStructures` | If `false`, overworld structures are disabled on affected dimensions. |
-| `dimensions` | Dimensions affected by the land mask. Remove an entry to **disable** Expandia there. |
 | `advancements` | List of advancement ids; completing one spawns a new island. Fully data-driven. |
 
 ### For modpack developers
@@ -111,8 +105,6 @@ On first launch Expandia writes `config/expandia/progression.json`:
 - **Add / remove advancements**: edit the `advancements` list (file) or ship a datapack (below).
   Each id grants exactly one island the first time it is completed.
 - **Resize islands**: change `baseRadius` (and `transitionWidth` for the coast band).
-- **Enable structures**: set `generateStructures` to `true`.
-- **Disable a dimension**: remove it from `dimensions` (default is overworld only).
 - **Reload without restart**: `/expandia reload` (file) or `/reload` (datapack overlay).
 
 ### Datapack support
@@ -155,8 +147,7 @@ config file + datapack -> ConfigManager
   functions with `expandia:land_mask`, which wraps the vanilla noise. Near an island centre it keeps
   vanilla terrain; past a smooth, wobbly coast band it blends toward warm deep ocean so each island
   is its own landmass. `ExpandiaOceanBiomeSource` forces plain `minecraft:ocean` on open water (no
-  icebergs), and `ExpandiaWorldGenInjector` installs it (and optionally disables structures) at
-  server start.
+  icebergs), and `ExpandiaWorldGenInjector` installs it and disables structures at server start.
 - **Island layout** (`ExpandiaIslandLayout`): island `#0` is the origin; the rest sit on a golden-
   angle spiral. `ExpandiaRadiusState` caches the flat list of centres so the density function can
   find the nearest centre per sample without allocating.
@@ -181,8 +172,8 @@ current islands, and `ExpandiaChunkRegenManager` rebuilds the affected discs so 
 - **Terralith / biome mods**: Expandia never replaces or wraps the biome source and never overrides
   biome selection or surface rules. It only modifies the final-density land mask, so biome mods keep
   full control. Load order is `AFTER` Terralith.
-- **Other dimensions**: only dimensions listed in `dimensions` are affected; the Nether/End and modded
-  dimensions are untouched unless you add them.
+- **Other dimensions**: only the overworld is affected; the Nether, End and modded dimensions are
+  untouched.
 
 ---
 

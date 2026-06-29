@@ -9,13 +9,10 @@ import java.util.Set;
 public record ExpandiaConfig(
         int baseRadius,
         int transitionWidth,
-        boolean generateStructures,
-        Set<Identifier> enabledDimensions,
         Set<Identifier> advancements
 ) {
 
     public ExpandiaConfig {
-        enabledDimensions = Collections.unmodifiableSet(new LinkedHashSet<>(enabledDimensions));
         advancements = Collections.unmodifiableSet(new LinkedHashSet<>(advancements));
     }
 
@@ -38,17 +35,10 @@ public record ExpandiaConfig(
         advancements.add(Identifier.parse("minecraft:end/root"));
         advancements.add(Identifier.parse("minecraft:end/kill_dragon"));
 
-        Set<Identifier> dimensions = new LinkedHashSet<>();
-        dimensions.add(Identifier.withDefaultNamespace("overworld"));
-
-        return new ExpandiaConfig(96, 24, false, dimensions, advancements);
+        return new ExpandiaConfig(96, 24, advancements);
     }
 
     public boolean isIslandAdvancement(Identifier advancement) {
         return advancements.contains(advancement);
-    }
-
-    public boolean isDimensionEnabled(Identifier dimension) {
-        return enabledDimensions.contains(dimension);
     }
 }

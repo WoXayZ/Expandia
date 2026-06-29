@@ -2,14 +2,13 @@ package com.expandia.worldgen;
 
 import com.expandia.Expandia;
 import com.expandia.ExpandiaConstants;
-import com.expandia.config.ExpandiaConfigManager;
 import com.expandia.progression.ExpandiaProgressionManager;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Biomes;
@@ -23,19 +22,17 @@ import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import sun.misc.Unsafe;
 
 import java.lang.reflect.Field;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Disables overworld structure generation when configured. Island climate and cave removal are
- * handled by datapack overrides ({@code data/minecraft/worldgen/density_function/...}) so every
- * spline reference to {@code overworld/continents} sees the masked version.
+ * Disables overworld structure generation. Island climate is handled by datapack overrides
+ * ({@code data/minecraft/worldgen/density_function/...}) so every spline reference to
+ * {@code overworld/continents} sees the masked version.
  */
 @EventBusSubscriber(modid = ExpandiaConstants.MOD_ID)
 public final class ExpandiaWorldGenInjector {
 
-    private static final Set<Identifier> STRUCTURES_DISABLED = ConcurrentHashMap.newKeySet();
-    private static final Set<Identifier> OCEAN_BIOME_FORCED = ConcurrentHashMap.newKeySet();
+    private static boolean structuresDisabled;
+    private static boolean oceanBiomeForced;
 
     @SuppressWarnings("sunapi")
     private static final Unsafe UNSAFE;
@@ -55,45 +52,38 @@ public final class ExpandiaWorldGenInjector {
 
     @SubscribeEvent
     public static void onServerStarting(ServerStartingEvent event) {
-        STRUCTURES_DISABLED.clear();
-        OCEAN_BIOME_FORCED.clear();
+        structuresDisabled = false;
+        oceanBiomeForced = false;
         ExpandiaProgressionManager.syncRuntimeState(event.getServer());
         inject(event.getServer());
     }
 
     public static void inject(MinecraftServer server) {
-        for (ServerLevel level : server.getAllLevels()) {
-            Identifier dimensionId = level.dimension().identifier();
-            if (!ExpandiaConfigManager.get().isDimensionEnabled(dimensionId)) {
-                continue;
-            }
-            try {
-                injectInto(level, dimensionId);
-            } catch (Throwable t) {
-                Expandia.LOGGER.error("Expandia: could not configure {} worldgen", dimensionId, t);
-            }
+        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+        if (overworld == null) {
+            return;
+        }
+        try {
+            injectInto(overworld);
+        } catch (Throwable t) {
+            Expandia.LOGGER.error("Expandia: could not configure overworld worldgen", t);
         }
     }
 
-    static void injectInto(ServerLevel level, Identifier dimensionId) throws Exception {
-        forceOceanBiome(level, dimensionId);
+    static void injectInto(ServerLevel level) throws Exception {
+        forceOceanBiome(level);
+        disableStructures(level);
+    }
 
-        if (ExpandiaConfigManager.get().generateStructures()) {
-            Expandia.LOGGER.info(
-                    "Expandia: island datapack active on {} (radius={} blocks, structures=true)",
-                    dimensionId,
-                    ExpandiaRadiusState.getIslandRadius()
-            );
+    private static void disableStructures(ServerLevel level) throws Exception {
+        if (structuresDisabled) {
             return;
         }
-
-        if (!STRUCTURES_DISABLED.add(dimensionId)) {
-            return;
-        }
+        structuresDisabled = true;
 
         ChunkGenerator generator = level.getChunkSource().getGenerator();
         if (!(generator instanceof NoiseBasedChunkGenerator noiseGenerator)) {
-            Expandia.LOGGER.warn("Expandia: {} does not use a noise-based chunk generator, skipping", dimensionId);
+            Expandia.LOGGER.warn("Expandia: overworld does not use a noise-based chunk generator, skipping structure disable");
             return;
         }
 
@@ -108,17 +98,16 @@ public final class ExpandiaWorldGenInjector {
         replaceFinalField(chunkMap, ChunkMap.class, "chunkGeneratorState", structureState);
 
         Expandia.LOGGER.info(
-                "Expandia: island datapack active on {} (radius={} blocks, structures=false)",
-                dimensionId,
+                "Expandia: island datapack active on overworld (radius={} blocks)",
                 ExpandiaRadiusState.getIslandRadius()
         );
     }
 
-    /** Wraps the dimension biome source so open water is always plain {@code minecraft:ocean}. */
-    private static void forceOceanBiome(ServerLevel level, Identifier dimensionId) throws Exception {
-        if (!OCEAN_BIOME_FORCED.add(dimensionId)) {
+    private static void forceOceanBiome(ServerLevel level) throws Exception {
+        if (oceanBiomeForced) {
             return;
         }
+        oceanBiomeForced = true;
 
         ChunkGenerator generator = level.getChunkSource().getGenerator();
         BiomeSource current = generator.getBiomeSource();
@@ -129,7 +118,7 @@ public final class ExpandiaWorldGenInjector {
         Holder<Biome> ocean = level.registryAccess().lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.OCEAN);
         ExpandiaOceanBiomeSource wrapped = new ExpandiaOceanBiomeSource(current, ocean);
         replaceFinalField(generator, ChunkGenerator.class, "biomeSource", wrapped);
-        Expandia.LOGGER.info("Expandia: forced minecraft:ocean biome around islands on {}", dimensionId);
+        Expandia.LOGGER.info("Expandia: forced minecraft:ocean biome around islands on overworld");
     }
 
     @SuppressWarnings("sunapi")

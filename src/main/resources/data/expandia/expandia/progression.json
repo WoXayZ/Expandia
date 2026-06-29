@@ -1,10 +1,6 @@
 {
   "baseRadius": 96,
   "transitionWidth": 24,
-  "generateStructures": false,
-  "dimensions": [
-    "minecraft:overworld"
-  ],
   "advancements": [
     "minecraft:story/mine_stone",
     "minecraft:story/upgrade_tools",

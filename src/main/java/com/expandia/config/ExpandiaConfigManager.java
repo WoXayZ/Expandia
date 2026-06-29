@@ -75,13 +75,9 @@ public final class ExpandiaConfigManager {
         Set<Identifier> advancements = new LinkedHashSet<>(base.advancements());
         advancements.addAll(override.advancements());
 
-        Set<Identifier> dimensions = new LinkedHashSet<>(override.enabledDimensions());
-
         return new ExpandiaConfig(
                 override.baseRadius(),
                 override.transitionWidth(),
-                override.generateStructures(),
-                dimensions,
                 advancements
         );
     }
@@ -91,22 +87,6 @@ public final class ExpandiaConfigManager {
 
         int baseRadius = getInt(json, "baseRadius", defaults.baseRadius());
         int transitionWidth = getInt(json, "transitionWidth", defaults.transitionWidth());
-        boolean generateStructures = json.has("generateStructures")
-                ? json.get("generateStructures").getAsBoolean()
-                : defaults.generateStructures();
-
-        Set<Identifier> dimensions = new LinkedHashSet<>();
-        if (json.has("dimensions") && json.get("dimensions").isJsonArray()) {
-            json.getAsJsonArray("dimensions").forEach(e -> {
-                Identifier id = parseId(e.getAsString());
-                if (id != null) {
-                    dimensions.add(id);
-                }
-            });
-        }
-        if (dimensions.isEmpty()) {
-            dimensions.addAll(defaults.enabledDimensions());
-        }
 
         Set<Identifier> advancements = new LinkedHashSet<>();
         if (json.has("advancements") && json.get("advancements").isJsonArray()) {
@@ -120,18 +100,13 @@ public final class ExpandiaConfigManager {
             });
         }
 
-        return new ExpandiaConfig(baseRadius, transitionWidth, generateStructures, dimensions, advancements);
+        return new ExpandiaConfig(baseRadius, transitionWidth, advancements);
     }
 
     public static JsonObject toJson(ExpandiaConfig config) {
         JsonObject json = new JsonObject();
         json.addProperty("baseRadius", config.baseRadius());
         json.addProperty("transitionWidth", config.transitionWidth());
-        json.addProperty("generateStructures", config.generateStructures());
-
-        com.google.gson.JsonArray dimensions = new com.google.gson.JsonArray();
-        config.enabledDimensions().forEach(id -> dimensions.add(id.toString()));
-        json.add("dimensions", dimensions);
 
         com.google.gson.JsonArray advancements = new com.google.gson.JsonArray();
         config.advancements().forEach(id -> advancements.add(id.toString()));
