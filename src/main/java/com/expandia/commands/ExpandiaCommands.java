@@ -11,8 +11,6 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.permissions.Permission;
-import net.minecraft.server.permissions.PermissionLevel;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -29,14 +27,14 @@ public final class ExpandiaCommands {
                 .then(Commands.literal("islands")
                         .executes(ExpandiaCommands::islands))
                 .then(Commands.literal("unlock")
-                        .requires(ExpandiaCommands::requiresGamemaster)
+                        .requires(source -> source.hasPermission(2))
                         .then(Commands.argument("count", IntegerArgumentType.integer(1))
                                 .executes(ExpandiaCommands::unlock)))
                 .then(Commands.literal("reset")
-                        .requires(ExpandiaCommands::requiresGamemaster)
+                        .requires(source -> source.hasPermission(2))
                         .executes(ExpandiaCommands::reset))
                 .then(Commands.literal("reload")
-                        .requires(ExpandiaCommands::requiresGamemaster)
+                        .requires(source -> source.hasPermission(2))
                         .executes(ExpandiaCommands::reload));
 
         event.getDispatcher().register(root);
@@ -44,11 +42,12 @@ public final class ExpandiaCommands {
 
     private static int islands(com.mojang.brigadier.context.CommandContext<CommandSourceStack> ctx) {
         MinecraftServer server = ctx.getSource().getServer();
-        int count = ExpandiaProgressionManager.getIslandCount(server);
+        int overworld = ExpandiaProgressionManager.getOverworldIslandCount(server);
+        int nether = ExpandiaProgressionManager.getNetherIslandCount(server);
         int radius = ExpandiaProgressionManager.getIslandRadius();
         ctx.getSource().sendSuccess(() -> Component.translatable(
-                ExpandiaConstants.Lang.COMMAND_ISLANDS, count, radius), false);
-        return count;
+                ExpandiaConstants.Lang.COMMAND_ISLANDS, overworld, nether, radius), false);
+        return overworld + nether;
     }
 
     private static int unlock(com.mojang.brigadier.context.CommandContext<CommandSourceStack> ctx) {
@@ -57,17 +56,20 @@ public final class ExpandiaCommands {
         for (int i = 0; i < count; i++) {
             ExpandiaProgressionManager.grantIsland(server, ctx.getSource().getPlayer());
         }
-        int total = ExpandiaProgressionManager.getIslandCount(server);
+        int totalOverworld = ExpandiaProgressionManager.getOverworldIslandCount(server);
+        int totalNether = ExpandiaProgressionManager.getNetherIslandCount(server);
         ctx.getSource().sendSuccess(() -> Component.translatable(
-                ExpandiaConstants.Lang.COMMAND_UNLOCK, count, total), true);
-        return total;
+                ExpandiaConstants.Lang.COMMAND_UNLOCK, count, totalOverworld, totalNether), true);
+        return totalOverworld + totalNether;
     }
 
     private static int reset(com.mojang.brigadier.context.CommandContext<CommandSourceStack> ctx) {
         MinecraftServer server = ctx.getSource().getServer();
         ExpandiaProgressionManager.reset(server);
         ctx.getSource().sendSuccess(() -> Component.translatable(
-                ExpandiaConstants.Lang.COMMAND_RESET, ExpandiaProgressionManager.getIslandCount(server)), true);
+                ExpandiaConstants.Lang.COMMAND_RESET,
+                ExpandiaProgressionManager.getOverworldIslandCount(server),
+                ExpandiaProgressionManager.getNetherIslandCount(server)), true);
         return 1;
     }
 
@@ -78,11 +80,9 @@ public final class ExpandiaCommands {
         ExpandiaWorldGenInjector.inject(server);
         ExpandiaProgressionSync.sendToAll(server);
         ctx.getSource().sendSuccess(() -> Component.translatable(
-                ExpandiaConstants.Lang.COMMAND_RELOAD, ExpandiaProgressionManager.getIslandCount(server)), true);
+                ExpandiaConstants.Lang.COMMAND_RELOAD,
+                ExpandiaProgressionManager.getOverworldIslandCount(server),
+                ExpandiaProgressionManager.getNetherIslandCount(server)), true);
         return 1;
-    }
-
-    private static boolean requiresGamemaster(CommandSourceStack source) {
-        return source.permissions().hasPermission(new Permission.HasCommandLevel(PermissionLevel.GAMEMASTERS));
     }
 }

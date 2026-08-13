@@ -1,12 +1,14 @@
 package com.expandia.persistence;
 
-import com.expandia.ExpandiaConstants;
-import com.mojang.serialization.Codec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
-import net.minecraft.world.level.saveddata.SavedDataType;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -15,112 +17,173 @@ import java.util.Set;
 
 public final class ExpandiaSavedData extends SavedData {
 
-    public static final Codec<ExpandiaSavedData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-            Codec.INT.listOf().optionalFieldOf("spiralIndices", List.of()).forGetter(data -> data.copyIndices()),
-            // Legacy fallback: pre-1.0 saves only stored a contiguous island count.
-            Codec.INT.optionalFieldOf("islandCount", 1).forGetter(data -> data.spiralIndices.size()),
-            Codec.STRING.listOf().optionalFieldOf("countedAdvancements", List.of())
-                    .forGetter(data -> List.copyOf(data.countedAdvancements))
-    ).apply(instance, ExpandiaSavedData::fromCodec));
-
-    public static final SavedDataType<ExpandiaSavedData> TYPE = new SavedDataType<>(
-            ExpandiaConstants.id("progression"),
+    public static final SavedData.Factory<ExpandiaSavedData> FACTORY = new SavedData.Factory<>(
             ExpandiaSavedData::new,
-            CODEC
+            ExpandiaSavedData::load
     );
 
-    /** Spiral slots holding an island; always contains {@code 0} (the spawn island). */
-    private final List<Integer> spiralIndices = new ArrayList<>();
-    private final Set<String> countedAdvancements = new HashSet<>();
+    private final DimProgress overworld = new DimProgress();
+    private final DimProgress nether = new DimProgress();
+
+    private boolean netherSpawnRepaired;
 
     public ExpandiaSavedData() {
-        this.spiralIndices.add(0);
     }
 
-    private ExpandiaSavedData(List<Integer> spiralIndices, int legacyCount, List<String> countedAdvancements) {
-        if (spiralIndices.isEmpty()) {
-            // Rebuild contiguous slots [0, legacyCount) from a legacy save.
-            int count = Math.max(1, legacyCount);
-            for (int i = 0; i < count; i++) {
-                this.spiralIndices.add(i);
-            }
+    public static ExpandiaSavedData load(CompoundTag tag, HolderLookup.Provider registries) {
+        ExpandiaSavedData data = new ExpandiaSavedData();
+        if (tag.contains("overworld", Tag.TAG_COMPOUND)) {
+            data.overworld.read(tag.getCompound("overworld"));
         } else {
-            this.spiralIndices.addAll(spiralIndices);
+            data.overworld.read(tag);
         }
-        if (!this.spiralIndices.contains(0)) {
-            this.spiralIndices.add(0);
+        if (tag.contains("nether", Tag.TAG_COMPOUND)) {
+            data.nether.read(tag.getCompound("nether"));
         }
-        this.countedAdvancements.addAll(countedAdvancements);
+        data.netherSpawnRepaired = tag.getBoolean("netherSpawnRepaired");
+        return data;
     }
 
-    private static ExpandiaSavedData fromCodec(List<Integer> spiralIndices, int legacyCount, List<String> countedAdvancements) {
-        return new ExpandiaSavedData(spiralIndices, legacyCount, countedAdvancements);
+    @Override
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
+        tag.put("overworld", this.overworld.write());
+        tag.put("nether", this.nether.write());
+        tag.putBoolean("netherSpawnRepaired", this.netherSpawnRepaired);
+        return tag;
     }
 
     public static ExpandiaSavedData get(MinecraftServer server) {
-        ServerLevel overworld = server.overworld();
-        return overworld.getDataStorage().computeIfAbsent(TYPE);
+        return server.overworld().getDataStorage().computeIfAbsent(FACTORY, "expandia_progression");
     }
 
-    private List<Integer> copyIndices() {
-        return List.copyOf(this.spiralIndices);
+    public DimProgress of(ResourceKey<Level> dimension) {
+        return Level.NETHER.equals(dimension) ? this.nether : this.overworld;
     }
 
-    public int getIslandCount() {
-        return this.spiralIndices.size();
+    public DimProgress overworld() {
+        return this.overworld;
     }
 
-    /** Spiral slots currently holding an island, as a flat {@code int[]}. */
-    public int[] getSpiralIndices() {
-        int[] result = new int[this.spiralIndices.size()];
-        for (int i = 0; i < result.length; i++) {
-            result[i] = this.spiralIndices.get(i);
-        }
-        return result;
+    public DimProgress nether() {
+        return this.nether;
     }
 
-    /** Highest spiral slot in use; new islands search outward from here. */
-    public int getHighestSpiralIndex() {
-        int max = 0;
-        for (int index : this.spiralIndices) {
-            max = Math.max(max, index);
-        }
-        return max;
-    }
-
-    public boolean hasCounted(String advancementId) {
-        return this.countedAdvancements.contains(advancementId);
-    }
-
-    /**
-     * Records a new island at {@code spiralIndex}, guarding against double counting the advancement.
-     *
-     * @return {@code true} if a new island was added, {@code false} if the advancement already counted.
-     */
-    public boolean addIsland(int spiralIndex, String advancementId) {
-        if (advancementId != null && !this.countedAdvancements.add(advancementId)) {
-            return false;
-        }
-        addSlot(spiralIndex);
-        return true;
-    }
-
-    /** Adds an island not tied to an advancement (e.g. the {@code /expandia unlock} command). */
-    public void addIsland(int spiralIndex) {
-        addSlot(spiralIndex);
-    }
-
-    private void addSlot(int spiralIndex) {
-        if (!this.spiralIndices.contains(spiralIndex)) {
-            this.spiralIndices.add(spiralIndex);
-        }
+    public void resetAll() {
+        this.overworld.reset();
+        this.nether.reset();
+        this.netherSpawnRepaired = false;
         setDirty();
     }
 
-    public void reset() {
-        this.spiralIndices.clear();
-        this.spiralIndices.add(0);
-        this.countedAdvancements.clear();
+    public boolean netherSpawnRepaired() {
+        return this.netherSpawnRepaired;
+    }
+
+    public void setNetherSpawnRepaired(boolean value) {
+        this.netherSpawnRepaired = value;
         setDirty();
+    }
+
+    public final class DimProgress {
+        private final List<Integer> spiralIndices = new ArrayList<>();
+        private final Set<String> countedAdvancements = new HashSet<>();
+
+        private DimProgress() {
+            this.spiralIndices.add(0);
+        }
+
+        private void read(CompoundTag tag) {
+            this.spiralIndices.clear();
+            this.countedAdvancements.clear();
+            if (tag.contains("spiralIndices", Tag.TAG_INT_ARRAY)) {
+                for (int value : tag.getIntArray("spiralIndices")) {
+                    this.spiralIndices.add(value);
+                }
+            }
+            if (this.spiralIndices.isEmpty()) {
+                int legacyCount = tag.contains("islandCount", Tag.TAG_INT) ? Math.max(1, tag.getInt("islandCount")) : 1;
+                for (int i = 0; i < legacyCount; i++) {
+                    this.spiralIndices.add(i);
+                }
+            }
+            if (!this.spiralIndices.contains(0)) {
+                this.spiralIndices.add(0);
+            }
+            if (tag.contains("countedAdvancements", Tag.TAG_LIST)) {
+                ListTag list = tag.getList("countedAdvancements", Tag.TAG_STRING);
+                for (int i = 0; i < list.size(); i++) {
+                    this.countedAdvancements.add(list.getString(i));
+                }
+            }
+        }
+
+        private CompoundTag write() {
+            CompoundTag tag = new CompoundTag();
+            tag.putIntArray("spiralIndices", this.spiralIndices.stream().mapToInt(Integer::intValue).toArray());
+            tag.putInt("islandCount", this.spiralIndices.size());
+            ListTag counted = new ListTag();
+            for (String id : this.countedAdvancements) {
+                counted.add(StringTag.valueOf(id));
+            }
+            tag.put("countedAdvancements", counted);
+            return tag;
+        }
+
+        public int getIslandCount() {
+            return this.spiralIndices.size();
+        }
+
+        public int[] getSpiralIndices() {
+            int[] result = new int[this.spiralIndices.size()];
+            for (int i = 0; i < result.length; i++) {
+                result[i] = this.spiralIndices.get(i);
+            }
+            return result;
+        }
+
+        public int getHighestSpiralIndex() {
+            int max = 0;
+            for (int index : this.spiralIndices) {
+                max = Math.max(max, index);
+            }
+            return max;
+        }
+
+        public boolean hasCounted(String advancementId) {
+            return this.countedAdvancements.contains(advancementId);
+        }
+
+        public boolean addIsland(int spiralIndex, String advancementId) {
+            if (advancementId != null && !this.countedAdvancements.add(advancementId)) {
+                return false;
+            }
+            addSlot(spiralIndex);
+            return true;
+        }
+
+        public void markCounted(String advancementId) {
+            if (advancementId != null) {
+                this.countedAdvancements.add(advancementId);
+                ExpandiaSavedData.this.setDirty();
+            }
+        }
+
+        public void addIsland(int spiralIndex) {
+            addSlot(spiralIndex);
+        }
+
+        private void addSlot(int spiralIndex) {
+            if (!this.spiralIndices.contains(spiralIndex)) {
+                this.spiralIndices.add(spiralIndex);
+            }
+            ExpandiaSavedData.this.setDirty();
+        }
+
+        public void reset() {
+            this.spiralIndices.clear();
+            this.spiralIndices.add(0);
+            this.countedAdvancements.clear();
+            ExpandiaSavedData.this.setDirty();
+        }
     }
 }

@@ -1,4 +1,3 @@
-# Expandia mod metadata. Placeholders are injected from gradle.properties at build time.
 modLoader = "javafml"
 loaderVersion = "${loader_version_range}"
 license = "${mod_license}"
@@ -17,7 +16,7 @@ ${mod_description}
 [[dependencies.${mod_id}]]
 modId = "neoforge"
 type = "required"
-versionRange = "${neoforge_version_range}"
+versionRange = "${neo_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
@@ -28,8 +27,6 @@ versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
-# Terralith / biome mods are optional: Expandia never touches biome selection,
-# it only modifies the land-mask density function, so it stays compatible.
 [[dependencies.${mod_id}]]
 modId = "terralith"
 type = "optional"

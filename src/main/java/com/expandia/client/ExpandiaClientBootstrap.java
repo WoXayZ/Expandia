@@ -11,10 +11,10 @@ import org.lwjgl.glfw.GLFW;
 
 public final class ExpandiaClientBootstrap {
 
-    public static final KeyMapping.Category CATEGORY = new KeyMapping.Category(ExpandiaConstants.id("main"));
-
     public static final KeyMapping OPEN_SCREEN = new KeyMapping(
-            ExpandiaConstants.Lang.KEY_OPEN_SCREEN, GLFW.GLFW_KEY_K, CATEGORY);
+            ExpandiaConstants.Lang.KEY_OPEN_SCREEN,
+            GLFW.GLFW_KEY_K,
+            ExpandiaConstants.Lang.KEY_CATEGORY);
 
     private ExpandiaClientBootstrap() {
     }
@@ -25,7 +25,6 @@ public final class ExpandiaClientBootstrap {
     }
 
     private static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
-        event.registerCategory(CATEGORY);
         event.register(OPEN_SCREEN);
     }
 

@@ -5,7 +5,7 @@ import com.expandia.ExpandiaConstants;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.resources.FileToIdConverter;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
@@ -16,23 +16,19 @@ import java.io.Reader;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Datapack-driven configuration. Reads every {@code data/&lt;ns&gt;/expandia/progression.json} on
- * datapack reload ({@code /reload}) and feeds it to {@link ExpandiaConfigManager} as an overlay.
- */
-public final class ExpandiaDatapackListener extends SimplePreparableReloadListener<Map<Identifier, ExpandiaConfig>> {
+public final class ExpandiaDatapackListener extends SimplePreparableReloadListener<Map<ResourceLocation, ExpandiaConfig>> {
 
     private static final FileToIdConverter LISTENER = FileToIdConverter.json(ExpandiaConstants.DATAPACK_DIRECTORY);
 
     @Override
-    protected Map<Identifier, ExpandiaConfig> prepare(ResourceManager manager, ProfilerFiller profiler) {
-        Map<Identifier, ExpandiaConfig> result = new HashMap<>();
-        for (Map.Entry<Identifier, Resource> entry : LISTENER.listMatchingResources(manager).entrySet()) {
-            Identifier fileId = LISTENER.fileToId(entry.getKey());
+    protected Map<ResourceLocation, ExpandiaConfig> prepare(ResourceManager manager, ProfilerFiller profiler) {
+        Map<ResourceLocation, ExpandiaConfig> result = new HashMap<>();
+        for (Map.Entry<ResourceLocation, Resource> entry : LISTENER.listMatchingResources(manager).entrySet()) {
+            ResourceLocation fileId = LISTENER.fileToId(entry.getKey());
             if (!fileId.getPath().equals(ExpandiaConstants.DATAPACK_FILE)) {
                 continue;
             }
-            Identifier configId = Identifier.fromNamespaceAndPath(entry.getKey().getNamespace(), fileId.getPath());
+            ResourceLocation configId = ResourceLocation.fromNamespaceAndPath(entry.getKey().getNamespace(), fileId.getPath());
             try (Reader reader = entry.getValue().openAsReader()) {
                 JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
                 result.put(configId, ExpandiaConfigManager.fromJson(json));
@@ -44,7 +40,7 @@ public final class ExpandiaDatapackListener extends SimplePreparableReloadListen
     }
 
     @Override
-    protected void apply(Map<Identifier, ExpandiaConfig> resources, ResourceManager manager, ProfilerFiller profiler) {
+    protected void apply(Map<ResourceLocation, ExpandiaConfig> resources, ResourceManager manager, ProfilerFiller profiler) {
         ExpandiaConfig overlay = null;
         for (ExpandiaConfig parsed : resources.values()) {
             overlay = (overlay == null) ? parsed : ExpandiaConfigManager.merge(overlay, parsed);

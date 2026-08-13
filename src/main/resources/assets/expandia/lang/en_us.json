@@ -1,12 +1,12 @@
 {
-  "expandia.command.islands": "Expandia: %s island(s), %s blocks radius each.",
-  "expandia.command.unlock": "Added %s island(s). Total: %s.",
-  "expandia.command.reset": "Expandia reset. %s island(s) remaining.",
-  "expandia.command.reload": "Expandia config reloaded. %s island(s).",
+  "expandia.command.islands": "Expandia: %s overworld island(s), %s nether island(s), %s blocks radius each.",
+  "expandia.command.unlock": "Added %s island(s). Overworld: %s, Nether: %s.",
+  "expandia.command.reset": "Expandia reset. Overworld: %s, Nether: %s.",
+  "expandia.command.reload": "Expandia config reloaded. Overworld: %s, Nether: %s.",
   "expandia.message.island_revealed": "Expandia: a new island appeared at (%s, %s)!",
   "expandia.message.advancement_already_counted": "Expandia: this advancement has already granted an island.",
 
-  "key.category.expandia.main": "Expandia",
+  "key.categories.expandia": "Expandia",
   "key.expandia.open_screen": "Open the island advancements",
 
   "expandia.screen.title": "Island Advancements",
@@ -15,5 +15,11 @@
   "expandia.screen.status.locked": "Locked",
   "expandia.screen.empty": "No island advancements are configured.",
   "expandia.screen.no_description": "Complete this advancement to reveal a new island.",
-  "expandia.screen.loading": "Loading\u2026"
+  "expandia.screen.loading": "Loading\u2026",
+  "expandia.screen.search": "Search\u2026",
+  "expandia.screen.filter": "Filter",
+  "expandia.screen.filter.all": "All",
+  "expandia.screen.filter.unlocked": "Unlocked",
+  "expandia.screen.filter.locked": "Locked",
+  "expandia.screen.no_results": "No advancements match your search."
 }

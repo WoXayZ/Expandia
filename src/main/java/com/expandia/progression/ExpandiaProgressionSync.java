@@ -5,7 +5,7 @@ import com.expandia.network.IslandAdvancementsPayload;
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.DisplayInfo;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.ServerAdvancementManager;
 import net.minecraft.server.level.ServerPlayer;
@@ -38,7 +38,7 @@ public final class ExpandiaProgressionSync {
     private static List<IslandAdvancementsPayload.Entry> buildEntries(MinecraftServer server, ServerPlayer player) {
         ServerAdvancementManager manager = server.getAdvancements();
         List<IslandAdvancementsPayload.Entry> entries = new ArrayList<>();
-        for (Identifier id : ExpandiaConfigManager.get().advancements()) {
+        for (ResourceLocation id : ExpandiaConfigManager.get().allAdvancements()) {
             AdvancementHolder holder = manager.get(id);
             Component title = Component.literal(id.toString());
             Component description = Component.empty();
@@ -50,7 +50,7 @@ public final class ExpandiaProgressionSync {
                     DisplayInfo info = display.get();
                     title = info.getTitle();
                     description = info.getDescription();
-                    icon = info.getIcon().create();
+                    icon = info.getIcon();
                 }
                 completed = player.getAdvancements().getOrStartProgress(holder).isDone();
             }

@@ -1,6 +1,6 @@
 # Expandia
 
-Progression-based world generation for **Minecraft 26.1.2** / **NeoForge 26.1.2.75** (Java 25).
+Progression-based world generation for **Minecraft 1.21.1** / **NeoForge 21.1.248** (Java 21).
 
 Players spawn on a tiny circular island at world spawn `(0, 0)`. The whole Overworld around it is
 forced to **open ocean**, so there is nowhere to go at first. Each time a player completes one of the
@@ -11,7 +11,7 @@ without a restart. Progress is saved per world.
 
 ## Features
 
-- Spawn island centred on `(0, 0)`, default radius **96** blocks.
+- Spawn island centred on `(0, 0)`, default radius **32** blocks.
 - Every island shares the same radius; the surrounding water is forced to plain `minecraft:ocean`
   (no deep/frozen/warm variants, so **no icebergs** or stray ocean features).
 - **Advancement-driven**: each listed advancement, once completed, spawns **exactly one** new island
@@ -24,7 +24,8 @@ without a restart. Progress is saved per world.
 - **Biome-mod friendly**: Expandia only modifies the land-mask density functions and forces the open
   ocean biome; it never overrides biome selection on land, so it works alongside **Terralith** and
   other biome mods.
-- Overworld structures are always disabled.
+- Overworld structures, caves, aquifers and mineral ores are always disabled. Underground stone
+  variants (deepslate, granite, diorite, andesite, tuff) still generate.
 - Per-world persistence via vanilla `SavedData`.
 
 ---
@@ -33,14 +34,11 @@ without a restart. Progress is saved per world.
 
 | Dependency | Version |
 | --- | --- |
-| Minecraft | 26.1.2 |
-| NeoForge | 26.1.2.75+ |
-| Java | 25 (LTS) |
+| Minecraft | 1.21.1 |
+| NeoForge | 21.1.248+ |
+| Java | 21 |
 | Gradle | 9.1+ |
 | ModDevGradle | 2.0+ |
-
-> Minecraft 26.1 uses calendar versioning (`year.release.patch`) and ships unobfuscated, so Java 25
-> is mandatory and no mapping layer is needed.
 
 ---
 
@@ -71,7 +69,7 @@ On first launch Expandia writes `config/expandia/progression.json`:
 
 ```json
 {
-  "baseRadius": 96,
+  "baseRadius": 32,
   "transitionWidth": 24,
   "advancements": [
     "minecraft:story/mine_stone",
@@ -147,7 +145,8 @@ config file + datapack -> ConfigManager
   functions with `expandia:land_mask`, which wraps the vanilla noise. Near an island centre it keeps
   vanilla terrain; past a smooth, wobbly coast band it blends toward warm deep ocean so each island
   is its own landmass. `ExpandiaOceanBiomeSource` forces plain `minecraft:ocean` on open water (no
-  icebergs), and `ExpandiaWorldGenInjector` installs it and disables structures at server start.
+  icebergs), and `ExpandiaWorldGenInjector` installs it, disables structures, fills caves and turns
+  off aquifers / noise ore veins at server start.
 - **Island layout** (`ExpandiaIslandLayout`): island `#0` is the origin; the rest sit on a golden-
   angle spiral. `ExpandiaRadiusState` caches the flat list of centres so the density function can
   find the nearest centre per sample without allocating.
@@ -180,8 +179,8 @@ current islands, and `ExpandiaChunkRegenManager` rebuilds the affected discs so 
 ## Publishing to CurseForge
 
 1. `./gradlew build`
-2. Upload `build/libs/expandia-neoforge-26.1.2-<version>.jar`.
-3. Set the game version to **26.1.2**, modloader **NeoForge**, and mark Terralith as an optional
+2. Upload `build/libs/expandia-neoforge-1.21.1-<version>.jar`.
+3. Set the game version to **1.21.1**, modloader **NeoForge**, and mark Terralith as an optional
    dependency.
 
 ---
@@ -205,15 +204,15 @@ examples/datapack/expandia_extra                 example custom advancement inte
 
 ## Notes / caveats
 
-This mod targets the very recent, deobfuscated Minecraft 26.1 API and relies on a few internal hooks
-that may need minor adjustment when compiling against the exact NeoForge 26.1.2.75 sources:
+This mod targets Minecraft 1.21.1 / NeoForge 21.1.248 and relies on a few internal hooks:
 
-- `ExpandiaWorldGenInjector` uses `sun.misc.Unsafe` to swap the biome source / structure state at
-  runtime, and `ExpandiaChunkRegenManager`/`ExpandiaServerChunkCacheInternals` reach into `ChunkMap`
-  and `ServerChunkCache` internals to wipe and regenerate island discs live.
+- `ExpandiaWorldGenInjector` uses `sun.misc.Unsafe` to swap the biome source, noise settings and
+  structure state at runtime, and `ExpandiaChunkRegenManager` reaches into `ChunkMap` / `ServerChunkCache`
+  internals to wipe and regenerate island discs live.
+- Caves, aquifers and noise ore veins are disabled at runtime; mineral ore features and carvers are
+  stripped with biome modifiers. Granite, diorite, andesite and tuff blobs are kept.
 - The land mask itself is data-driven through the `expandia:land_mask` density-function type and the
-  datapack overrides under `data/minecraft/worldgen/density_function/overworld/`, so terrain shaping
-  keeps working even if a runtime hook needs updating.
+  datapack overrides under `data/minecraft/worldgen/density_function/overworld/`.
 
 ## License
 

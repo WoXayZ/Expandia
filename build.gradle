@@ -1,8 +1,7 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
-    // ModDevGradle 2.x is the only plugin that currently supports Minecraft 26.1+.
-    id 'net.neoforged.moddev' version '2.0.141'
+    id 'net.neoforged.moddev' version '2.0.143'
 }
 
 version = "${mod_version}+mc${minecraft_version}"
@@ -12,9 +11,8 @@ base {
     archivesName = "${mod_id}-neoforge-${minecraft_version}"
 }
 
-// Minecraft 26.1 requires Java 25 (LTS).
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(25)
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
 
 repositories {
@@ -26,9 +24,13 @@ repositories {
 }
 
 neoForge {
-    version = project.neoforge_version
+    version = project.neo_version
 
-    // Generates the neoForge.mods.toml validation and run configurations.
+    parchment {
+        minecraftVersion = project.parchment_minecraft_version
+        mappingsVersion = project.parchment_mappings_version
+    }
+
     runs {
         client {
             client()
@@ -38,7 +40,6 @@ neoForge {
             server()
             programArgument '--nogui'
         }
-        // Generates data (recipes, advancements, tags...) into src/generated/resources if needed.
         data {
             data()
         }
@@ -51,17 +52,12 @@ neoForge {
     }
 }
 
-dependencies {
-    // Compile-time only optional integrations could be added here (e.g. Terralith) if a maven is available.
-}
-
-// Inject gradle.properties values into neoforge.mods.toml at build time.
 var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
     var replaceProperties = [
             minecraft_version      : minecraft_version,
             minecraft_version_range: minecraft_version_range,
-            neoforge_version       : neoforge_version,
-            neoforge_version_range : neoforge_version_range,
+            neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
             loader_version_range   : loader_version_range,
             mod_id                 : mod_id,
             mod_name               : mod_name,

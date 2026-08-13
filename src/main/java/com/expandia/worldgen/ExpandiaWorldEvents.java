@@ -6,7 +6,6 @@ import com.expandia.progression.ExpandiaProgressionManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.storage.LevelData;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.LevelEvent;
@@ -23,7 +22,7 @@ public final class ExpandiaWorldEvents {
             return;
         }
 
-        if (level.dimension() != Level.OVERWORLD) {
+        if (!Level.OVERWORLD.equals(level.dimension())) {
             return;
         }
 
@@ -37,12 +36,7 @@ public final class ExpandiaWorldEvents {
         }
 
         int seaLevel = level.getSeaLevel();
-        event.getSettings().setSpawn(LevelData.RespawnData.of(
-                level.dimension(),
-                new BlockPos(0, seaLevel, 0),
-                0.0F,
-                0.0F
-        ));
+        event.getSettings().setSpawn(new BlockPos(0, seaLevel, 0), 0.0F);
         event.setCanceled(true);
         Expandia.LOGGER.info("Expandia: overworld spawn pinned to (0, {}, 0)", seaLevel);
     }

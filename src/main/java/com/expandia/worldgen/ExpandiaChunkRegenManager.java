@@ -4,51 +4,62 @@ import com.expandia.Expandia;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.chunk.storage.IOWorker;
+import net.minecraft.world.level.chunk.ProtoChunk;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
-/** Unloads, wipes and regenerates island discs live. Jobs are queued and run one at a time. */
 public final class ExpandiaChunkRegenManager {
 
-    private static final int SHRUNK_VIEW_DISTANCE = 2;
-    private static final int MAX_UNLOAD_TICKS = 2_400;
-    private static final int UNLOAD_STALL_LIMIT = 100;
-    private static final int MAX_GENERATE_TICKS = 600;
-    private static final int SETTLE_TICKS = 5;
+    private static final int MAX_IN_FLIGHT = 2;
+    private static final int LIGHT_SETTLE_TICKS = 8;
 
-    private enum Phase { UNLOAD, GENERATE, RESEND, DONE }
+    private enum Phase { TERRAIN, DECORATE, LIGHT, RESEND, DONE }
 
     private static final Deque<ExpandiaChunkRegenManager> QUEUE = new ArrayDeque<>();
     private static ExpandiaChunkRegenManager active;
 
     private final ServerLevel level;
-    private final List<ChunkPos> chunks;
-    private int restoreViewDistance;
-    private boolean shrinkView;
+    private final int targetSlot;
+    private final List<ChunkPos> loaded;
+    private final List<ChunkPos> onDisk;
+    private final Deque<ChunkPos> terrainQueue = new ArrayDeque<>();
+    private final List<InFlight> inFlight = new ArrayList<>();
     private Phase phase;
-    private int phaseTicks;
+    private int cursor;
     private int settleTicks;
-    private int lastRemaining = Integer.MAX_VALUE;
-    private int stallTicks;
+    private int rebuilt;
 
-    private ExpandiaChunkRegenManager(ServerLevel level, List<ChunkPos> chunks) {
+    private ExpandiaChunkRegenManager(ServerLevel level, int targetSlot, List<ChunkPos> loaded, List<ChunkPos> onDisk) {
         this.level = level;
-        this.chunks = chunks;
-        this.phase = Phase.UNLOAD;
+        this.targetSlot = targetSlot;
+        this.loaded = loaded;
+        this.onDisk = onDisk;
+        this.phase = Phase.TERRAIN;
     }
 
-    public static void revealIsland(ServerLevel level, double centerX, double centerZ, int radius) {
-        begin(level, ExpandiaChunkRegenerator.collectIslandDisc(centerX, centerZ, radius));
-    }
+    public static void revealIsland(
+            ServerLevel level, double centerX, double centerZ, int radius, int transitionWidth, int targetSlot) {
+        List<ChunkPos> disc = ExpandiaChunkRegenerator.collectIslandDisc(centerX, centerZ, radius, transitionWidth);
+        List<ChunkPos> loaded = ExpandiaChunkRegenerator.currentlyLoaded(level, disc);
+        loaded.sort(Comparator.comparingDouble(pos -> distanceSq(pos, centerX, centerZ)));
 
-    public static void begin(ServerLevel level, List<ChunkPos> chunks) {
-        if (chunks.isEmpty()) {
-            return;
+        Set<ChunkPos> loadedSet = new HashSet<>(loaded);
+        List<ChunkPos> onDisk = new ArrayList<>();
+        for (ChunkPos pos : disc) {
+            if (!loadedSet.contains(pos)) {
+                onDisk.add(pos);
+            }
         }
-        QUEUE.add(new ExpandiaChunkRegenManager(level, List.copyOf(chunks)));
+
+        QUEUE.add(new ExpandiaChunkRegenManager(level, targetSlot, List.copyOf(loaded), List.copyOf(onDisk)));
     }
 
     public static boolean isRunning() {
@@ -73,125 +84,104 @@ public final class ExpandiaChunkRegenManager {
     }
 
     private void start() {
-        this.restoreViewDistance = this.level.getServer().getPlayerList().getViewDistance();
-        this.shrinkView = this.chunks.stream()
-                .anyMatch(pos -> this.level.getChunkSource().hasChunk(pos.x(), pos.z()));
-        this.phase = Phase.UNLOAD;
-        this.phaseTicks = 0;
+        this.cursor = 0;
         this.settleTicks = 0;
-        this.stallTicks = 0;
-        this.lastRemaining = Integer.MAX_VALUE;
-        if (this.shrinkView) {
-            this.level.getChunkSource().setViewDistance(SHRUNK_VIEW_DISTANCE);
+        this.rebuilt = 0;
+        this.terrainQueue.addAll(this.loaded);
+        ExpandiaChunkRegenerator.wipeOnDisk(this.level, this.onDisk);
+        Expandia.LOGGER.info("Expandia: revealing island slot {} ({} loaded, {} wiped on disk)",
+                this.targetSlot, this.loaded.size(), this.onDisk.size());
+        if (this.loaded.isEmpty()) {
+            this.phase = Phase.DONE;
+            Expandia.LOGGER.info("Expandia: island reveal finished (nothing loaded; fresh gen on visit)");
+        } else {
+            this.phase = Phase.TERRAIN;
         }
-        Expandia.LOGGER.info("Expandia: revealing a new island ({} chunks, alreadyLoaded={})",
-                this.chunks.size(), this.shrinkView);
     }
 
     private void step() {
-        ExpandiaServerChunkCacheInternals.runDistanceManagerUpdates(this.level);
-        this.level.getChunkSource().pollTask();
-        this.phaseTicks++;
-
         switch (this.phase) {
-            case UNLOAD -> stepUnload();
-            case GENERATE -> stepGenerate();
+            case TERRAIN -> stepTerrain();
+            case DECORATE -> stepDecorate();
+            case LIGHT -> stepLight();
             case RESEND -> stepResend();
             case DONE -> {
             }
         }
     }
 
-    private void stepUnload() {
-        int remaining = this.shrinkView
-                ? (int) this.chunks.stream().filter(pos -> !isChunkGone(pos)).count()
-                : 0;
-        boolean allUnloaded = remaining == 0;
-
-        this.settleTicks = allUnloaded ? this.settleTicks + 1 : 0;
-
-        if (remaining < this.lastRemaining) {
-            this.lastRemaining = remaining;
-            this.stallTicks = 0;
-        } else {
-            this.stallTicks++;
-        }
-
-        boolean settled = allUnloaded && this.settleTicks >= SETTLE_TICKS;
-        boolean stalled = this.stallTicks >= UNLOAD_STALL_LIMIT;
-        if (settled || stalled || this.phaseTicks >= MAX_UNLOAD_TICKS) {
-            if (!allUnloaded) {
-                Expandia.LOGGER.warn("Expandia: {} disc chunk(s) would not unload (a player is likely "
-                        + "standing on the island spot); they may keep their old terrain", remaining);
+    private void stepTerrain() {
+        Iterator<InFlight> iterator = this.inFlight.iterator();
+        while (iterator.hasNext()) {
+            InFlight task = iterator.next();
+            if (!task.future.isDone()) {
+                continue;
             }
-            wipeOnDisk(this.level, this.chunks);
-            forceLoad(true);
-            this.phase = Phase.GENERATE;
-            this.phaseTicks = 0;
+            iterator.remove();
+            ProtoChunk proto = task.future.getNow(null);
+            if (ExpandiaChunkRegenerator.applyGeneratedChunk(this.level, task.pos, proto, this.targetSlot)) {
+                this.rebuilt++;
+                ExpandiaChunkRegenerator.relight(this.level, task.pos);
+                pushNearby(task.pos);
+            }
+        }
+
+        while (this.inFlight.size() < MAX_IN_FLIGHT && !this.terrainQueue.isEmpty()) {
+            ChunkPos pos = this.terrainQueue.poll();
+            this.inFlight.add(new InFlight(pos, ExpandiaChunkRegenerator.generateVanillaAsync(this.level, pos)));
+        }
+
+        if (this.terrainQueue.isEmpty() && this.inFlight.isEmpty()) {
+            this.phase = Phase.DECORATE;
+            this.cursor = 0;
         }
     }
 
-    private boolean isChunkGone(ChunkPos pos) {
-        return ExpandiaServerChunkCacheInternals.isUnloaded(this.level, pos.pack())
-                && !this.level.getChunkSource().hasChunk(pos.x(), pos.z());
+    private void stepDecorate() {
+        if (this.cursor < this.loaded.size()) {
+            ChunkPos pos = this.loaded.get(this.cursor);
+            ExpandiaChunkRegenerator.decorateLoaded(this.level, pos);
+            ExpandiaChunkRegenerator.relight(this.level, pos);
+            pushNearby(pos);
+            this.cursor++;
+            return;
+        }
+        this.phase = Phase.LIGHT;
+        this.settleTicks = 0;
     }
 
-    private void stepGenerate() {
-        boolean allGenerated = this.chunks.stream()
-                .allMatch(pos -> ExpandiaChunkRegenerator.isFullyGenerated(this.level, pos));
-        if (allGenerated || this.phaseTicks >= MAX_GENERATE_TICKS) {
+    private void stepLight() {
+        this.settleTicks++;
+        if (this.settleTicks >= LIGHT_SETTLE_TICKS) {
             this.phase = Phase.RESEND;
-            this.phaseTicks = 0;
+        }
+    }
+
+    private void pushNearby(ChunkPos pos) {
+        int view = this.level.getServer().getPlayerList().getViewDistance();
+        for (ServerPlayer player : this.level.players()) {
+            int dist = Math.max(Math.abs(pos.x - player.chunkPosition().x), Math.abs(pos.z - player.chunkPosition().z));
+            if (dist <= view) {
+                ExpandiaChunkRegenerator.pushToClients(this.level, pos, player);
+            }
         }
     }
 
     private void stepResend() {
-        for (ServerPlayer player : this.level.players()) {
-            int playerChunkX = player.chunkPosition().x();
-            int playerChunkZ = player.chunkPosition().z();
-            for (ChunkPos pos : this.chunks) {
-                int dist = Math.max(Math.abs(pos.x() - playerChunkX), Math.abs(pos.z() - playerChunkZ));
-                if (dist <= this.restoreViewDistance) {
-                    ExpandiaChunkRegenerator.pushToClients(this.level, pos, player);
-                }
-            }
+        for (ChunkPos pos : this.loaded) {
+            pushNearby(pos);
         }
-        finish();
-    }
-
-    private void finish() {
-        forceLoad(false);
-        if (this.shrinkView) {
-            this.level.getChunkSource().setViewDistance(this.restoreViewDistance);
-        }
+        ExpandiaChunkRegenerator.snapPlayersToSurface(this.level, this.loaded);
         this.phase = Phase.DONE;
-        Expandia.LOGGER.info("Expandia: island reveal finished");
+        Expandia.LOGGER.info("Expandia: island reveal finished ({} chunk(s) rebuilt)", this.rebuilt);
     }
 
-    private void forceLoad(boolean add) {
-        for (ChunkPos pos : this.chunks) {
-            this.level.setChunkForced(pos.x(), pos.z(), add);
-        }
+    private static double distanceSq(ChunkPos pos, double centerX, double centerZ) {
+        double dx = pos.getMiddleBlockX() - centerX;
+        double dz = pos.getMiddleBlockZ() - centerZ;
+        return dx * dx + dz * dz;
     }
 
-    private static void wipeOnDisk(ServerLevel level, List<ChunkPos> chunks) {
-        var chunkMap = level.getChunkSource().chunkMap;
-        try {
-            chunkMap.synchronize(true).join();
-        } catch (Exception e) {
-            Expandia.LOGGER.warn("Expandia: failed to flush chunk storage before wipe", e);
-        }
-        for (ChunkPos pos : chunks) {
-            try {
-                chunkMap.write(pos, IOWorker.STORE_EMPTY).join();
-            } catch (Exception e) {
-                Expandia.LOGGER.warn("Expandia: failed to wipe chunk {}", pos, e);
-            }
-        }
-        try {
-            chunkMap.synchronize(true).join();
-        } catch (Exception e) {
-            Expandia.LOGGER.warn("Expandia: failed to flush chunk storage after wipe", e);
-        }
+    private record InFlight(ChunkPos pos, CompletableFuture<ProtoChunk> future) {
     }
 }

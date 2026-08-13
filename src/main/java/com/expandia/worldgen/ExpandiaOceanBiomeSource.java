@@ -1,17 +1,24 @@
 package com.expandia.worldgen;
 
+import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.Holder;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.QuartPos;
-import net.minecraft.resources.Identifier;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.BiomeTags;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.biome.Climate;
 
-import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Random;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -19,17 +26,21 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
 
     public static final MapCodec<ExpandiaOceanBiomeSource> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
             BiomeSource.CODEC.fieldOf("delegate").forGetter(ExpandiaOceanBiomeSource::delegate),
-            Biome.CODEC.fieldOf("ocean").forGetter(ExpandiaOceanBiomeSource::ocean)
+            Biome.CODEC.fieldOf("ocean").forGetter(ExpandiaOceanBiomeSource::ocean),
+            Codec.BOOL.optionalFieldOf("nether", false).forGetter(ExpandiaOceanBiomeSource::nether)
     ).apply(instance, ExpandiaOceanBiomeSource::new));
 
     private final BiomeSource delegate;
     private final Holder<Biome> ocean;
+    private final boolean nether;
+    private volatile HolderLookup.RegistryLookup<Biome> biomeLookup;
+    private volatile long worldSeed;
     private volatile List<Holder<Biome>> islandBiomes;
-    private volatile Holder<Biome> spawnBiome;
 
-    public ExpandiaOceanBiomeSource(BiomeSource delegate, Holder<Biome> ocean) {
+    public ExpandiaOceanBiomeSource(BiomeSource delegate, Holder<Biome> ocean, boolean nether) {
         this.delegate = delegate;
         this.ocean = ocean;
+        this.nether = nether;
     }
 
     public BiomeSource delegate() {
@@ -40,6 +51,16 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
         return this.ocean;
     }
 
+    public boolean nether() {
+        return this.nether;
+    }
+
+    public void bind(HolderLookup.RegistryLookup<Biome> biomes, long seed) {
+        this.biomeLookup = biomes;
+        this.worldSeed = seed;
+        this.islandBiomes = null;
+    }
+
     @Override
     protected MapCodec<? extends BiomeSource> codec() {
         return CODEC;
@@ -47,40 +68,28 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
 
     @Override
     protected Stream<Holder<Biome>> collectPossibleBiomes() {
-        return Stream.concat(this.delegate.possibleBiomes().stream(), Stream.of(this.ocean)).distinct();
+        return Stream.concat(islandBiomes().stream(), Stream.concat(this.delegate.possibleBiomes().stream(), Stream.of(this.ocean)))
+                .distinct();
     }
 
     @Override
     public Holder<Biome> getNoiseBiome(int quartX, int quartY, int quartZ, Climate.Sampler sampler) {
-        int blockX = QuartPos.toBlock(quartX);
-        int blockZ = QuartPos.toBlock(quartZ);
-        if (!ExpandiaRadiusState.isWithinIslandReach(blockX, blockZ)) {
+        int blockX = QuartPos.toBlock(quartX) + 2;
+        int blockZ = QuartPos.toBlock(quartZ) + 2;
+        ExpandiaRadiusState.DimState state = dimState();
+        if (!state.isWithinIslandReach(blockX, blockZ)) {
             return this.ocean;
         }
         List<Holder<Biome>> biomes = islandBiomes();
         if (biomes.isEmpty()) {
             return this.delegate.getNoiseBiome(quartX, quartY, quartZ, sampler);
         }
-        int slot = ExpandiaRadiusState.nearestIslandSlot(blockX, blockZ);
-        if (slot == 0) {
-            return spawnBiome();
-        }
+        int slot = state.nearestIslandSlot(blockX, blockZ);
         return biomes.get(Math.floorMod(slot, biomes.size()));
     }
 
-    private Holder<Biome> spawnBiome() {
-        Holder<Biome> cached = this.spawnBiome;
-        if (cached != null) {
-            return cached;
-        }
-        List<Holder<Biome>> biomes = islandBiomes();
-        Holder<Biome> chosen = biomes.stream()
-                .filter(b -> "minecraft:forest".equals(biomeId(b)))
-                .findFirst()
-                .or(() -> biomes.stream().filter(b -> b.is(BiomeTags.IS_FOREST)).findFirst())
-                .orElseGet(() -> biomes.isEmpty() ? this.ocean : biomes.get(0));
-        this.spawnBiome = chosen;
-        return chosen;
+    private ExpandiaRadiusState.DimState dimState() {
+        return this.nether ? ExpandiaRadiusState.NETHER : ExpandiaRadiusState.OVERWORLD;
     }
 
     private List<Holder<Biome>> islandBiomes() {
@@ -88,37 +97,89 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
         if (cached != null) {
             return cached;
         }
-        Set<Holder<Biome>> possible = this.delegate.possibleBiomes();
-        cached = possible.stream()
-                .filter(ExpandiaOceanBiomeSource::isIslandBiome)
-                .sorted(Comparator.comparingInt(ExpandiaOceanBiomeSource::shuffleKey)
-                        .thenComparing(ExpandiaOceanBiomeSource::biomeId))
-                .toList();
-        this.islandBiomes = cached.isEmpty() ? List.copyOf(possible) : cached;
-        return this.islandBiomes;
+        Set<Holder<Biome>> unique = new LinkedHashSet<>();
+        for (Holder<Biome> biome : this.delegate.possibleBiomes()) {
+            if (isIslandBiome(biome)) {
+                unique.add(biome);
+            }
+        }
+        HolderLookup.RegistryLookup<Biome> lookup = this.biomeLookup;
+        if (lookup != null) {
+            lookup.listElements().forEach(holder -> {
+                if (isIslandBiome(holder)) {
+                    unique.add(holder);
+                }
+            });
+        }
+
+        List<Holder<Biome>> pool = new ArrayList<>(unique);
+        Holder<Biome> spawn = pickSpawnBiome(pool);
+        if (spawn != null) {
+            pool.removeIf(biome -> holdersMatch(biome, spawn));
+        }
+        Collections.shuffle(pool, new Random(this.worldSeed ^ (this.nether ? 0x9E3779B97F4A7C15L : 0xC2B2AE3D27D4EB4FL)));
+
+        List<Holder<Biome>> ordered = new ArrayList<>(pool.size() + 1);
+        if (spawn != null) {
+            ordered.add(spawn);
+        }
+        ordered.addAll(pool);
+        this.islandBiomes = ordered;
+        return ordered;
     }
 
-    private static boolean isIslandBiome(Holder<Biome> biome) {
-        if (biome.is(BiomeTags.IS_OCEAN) || biome.is(BiomeTags.IS_RIVER) || biome.is(BiomeTags.IS_BEACH)) {
+    private Holder<Biome> pickSpawnBiome(List<Holder<Biome>> pool) {
+        ResourceKey<Biome> preferred = this.nether ? Biomes.NETHER_WASTES : Biomes.FOREST;
+        for (Holder<Biome> biome : pool) {
+            if (biome.is(preferred)) {
+                return biome;
+            }
+        }
+        if (!this.nether) {
+            for (Holder<Biome> biome : pool) {
+                if (biome.is(BiomeTags.IS_FOREST)) {
+                    return biome;
+                }
+            }
+        }
+        HolderLookup.RegistryLookup<Biome> lookup = this.biomeLookup;
+        if (lookup != null) {
+            return lookup.get(preferred).map(holder -> (Holder<Biome>) holder).orElse(pool.isEmpty() ? this.ocean : pool.get(0));
+        }
+        return pool.isEmpty() ? this.ocean : pool.get(0);
+    }
+
+    private boolean isIslandBiome(Holder<Biome> biome) {
+        if (holdersMatch(biome, this.ocean)) {
             return false;
         }
+        if (biome.is(Biomes.THE_VOID)) {
+            return false;
+        }
+        if (biome.is(BiomeTags.IS_OCEAN) || biome.is(BiomeTags.IS_RIVER) || biome.is(BiomeTags.IS_END)) {
+            return false;
+        }
+        if (isUndergroundBiome(biome)) {
+            return false;
+        }
+        if (this.nether) {
+            return biome.is(BiomeTags.IS_NETHER);
+        }
+        return !biome.is(BiomeTags.IS_NETHER);
+    }
+
+    private static boolean isUndergroundBiome(Holder<Biome> biome) {
         return biome.unwrapKey().map(key -> {
-            Identifier id = key.identifier();
-            if (!"minecraft".equals(id.getNamespace())) {
-                return true;
-            }
-            return switch (id.getPath()) {
-                case "lush_caves", "dripstone_caves", "deep_dark", "the_void", "stony_shore" -> false;
-                default -> true;
-            };
+            String path = key.location().getPath();
+            return path.contains("cave") || path.contains("deep_dark") || path.contains("underground")
+                    || "the_void".equals(path);
         }).orElse(false);
     }
 
-    private static String biomeId(Holder<Biome> biome) {
-        return biome.unwrapKey().map(key -> key.identifier().toString()).orElse("");
-    }
-
-    private static int shuffleKey(Holder<Biome> biome) {
-        return biomeId(biome).hashCode() * 0x9E3779B1;
+    private static boolean holdersMatch(Holder<Biome> left, Holder<Biome> right) {
+        if (left == right) {
+            return true;
+        }
+        return left.unwrapKey().isPresent() && right.unwrapKey().isPresent() && left.unwrapKey().equals(right.unwrapKey());
     }
 }

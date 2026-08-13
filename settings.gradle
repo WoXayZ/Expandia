@@ -10,7 +10,6 @@ pluginManagement {
 }
 
 plugins {
-    // Allows Gradle to automatically download the required JDK (Java 25) if it is not installed.
     id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
 }
 

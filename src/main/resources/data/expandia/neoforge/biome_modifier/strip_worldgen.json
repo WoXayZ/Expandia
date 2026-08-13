@@ -1,0 +1,4 @@
+{
+  "type": "expandia:strip_worldgen",
+  "biomes": "#minecraft:is_overworld"
+}

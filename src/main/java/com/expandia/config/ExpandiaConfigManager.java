@@ -4,20 +4,21 @@ import com.expandia.Expandia;
 import com.expandia.ExpandiaConstants;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.fml.loading.FMLPaths;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
-/**
- * Loads, merges and reloads the Expandia configuration from disk and datapack overlays.
- */
 public final class ExpandiaConfigManager {
 
     private ExpandiaConfigManager() {
@@ -55,8 +56,11 @@ public final class ExpandiaConfigManager {
             fileConfig = ExpandiaConfig.defaults();
         }
         current = merge(datapackOverlay, fileConfig);
-        Expandia.LOGGER.info("Expandia: config loaded (baseRadius={}, transitionWidth={}, {} island advancements)",
-                current.baseRadius(), current.transitionWidth(), current.advancements().size());
+        Expandia.LOGGER.info(
+                "Expandia: config loaded (radius={}, overworld {} advancements, nether {} advancements; biomes auto)",
+                current.baseRadius(),
+                current.overworld().advancements().size(),
+                current.nether().advancements().size());
     }
 
     public static synchronized void reload() {
@@ -72,46 +76,102 @@ public final class ExpandiaConfigManager {
         if (base == null) {
             return override;
         }
-        Set<Identifier> advancements = new LinkedHashSet<>(base.advancements());
-        advancements.addAll(override.advancements());
-
         return new ExpandiaConfig(
                 override.baseRadius(),
                 override.transitionWidth(),
-                advancements
+                mergePack(base.overworld(), override.overworld()),
+                mergePack(base.nether(), override.nether())
         );
+    }
+
+    private static ExpandiaConfig.DimensionPack mergePack(
+            ExpandiaConfig.DimensionPack base, ExpandiaConfig.DimensionPack override) {
+        Set<ResourceLocation> advancements = new LinkedHashSet<>(base.advancements());
+        advancements.addAll(override.advancements());
+        return new ExpandiaConfig.DimensionPack(new ArrayList<>(advancements));
     }
 
     public static ExpandiaConfig fromJson(JsonObject json) {
         ExpandiaConfig defaults = ExpandiaConfig.defaults();
-
         int baseRadius = getInt(json, "baseRadius", defaults.baseRadius());
         int transitionWidth = getInt(json, "transitionWidth", defaults.transitionWidth());
-
-        Set<Identifier> advancements = new LinkedHashSet<>();
-        if (json.has("advancements") && json.get("advancements").isJsonArray()) {
-            json.getAsJsonArray("advancements").forEach(e -> {
-                Identifier id = parseId(e.getAsString());
-                if (id == null) {
-                    Expandia.LOGGER.warn("Expandia: skipping invalid advancement id '{}'", e);
-                } else {
-                    advancements.add(id);
-                }
-            });
+        if (json.has("overworld") && json.get("overworld").isJsonObject()) {
+            ExpandiaConfig.DimensionPack overworld = packFromJson(json.getAsJsonObject("overworld"), defaults.overworld());
+            ExpandiaConfig.DimensionPack nether = json.has("nether") && json.get("nether").isJsonObject()
+                    ? packFromJson(json.getAsJsonObject("nether"), defaults.nether())
+                    : defaults.nether();
+            return new ExpandiaConfig(baseRadius, transitionWidth, overworld, nether);
         }
+        return fromLegacyJson(json, defaults, baseRadius, transitionWidth);
+    }
 
-        return new ExpandiaConfig(baseRadius, transitionWidth, advancements);
+    private static ExpandiaConfig fromLegacyJson(
+            JsonObject json, ExpandiaConfig defaults, int baseRadius, int transitionWidth) {
+        if (!json.has("advancements")) {
+            return new ExpandiaConfig(baseRadius, transitionWidth, defaults.overworld(), defaults.nether());
+        }
+        List<ResourceLocation> overworld = new ArrayList<>();
+        List<ResourceLocation> nether = new ArrayList<>();
+        for (ResourceLocation id : readIds(json.get("advancements"))) {
+            if (id.getPath().startsWith("nether/")) {
+                nether.add(id);
+            } else {
+                overworld.add(id);
+            }
+        }
+        ExpandiaConfig.DimensionPack overworldPack = overworld.isEmpty()
+                ? defaults.overworld()
+                : new ExpandiaConfig.DimensionPack(overworld);
+        ExpandiaConfig.DimensionPack netherPack = nether.isEmpty()
+                ? defaults.nether()
+                : new ExpandiaConfig.DimensionPack(nether);
+        return new ExpandiaConfig(baseRadius, transitionWidth, overworldPack, netherPack);
+    }
+
+    private static ExpandiaConfig.DimensionPack packFromJson(JsonObject json, ExpandiaConfig.DimensionPack defaults) {
+        List<ResourceLocation> advancements = json.has("advancements")
+                ? readIds(json.get("advancements")) : defaults.advancements();
+        if (advancements.isEmpty()) {
+            advancements = defaults.advancements();
+        }
+        return new ExpandiaConfig.DimensionPack(advancements);
+    }
+
+    private static List<ResourceLocation> readIds(JsonElement element) {
+        List<ResourceLocation> ids = new ArrayList<>();
+        if (element == null || !element.isJsonArray()) {
+            return ids;
+        }
+        for (JsonElement entry : element.getAsJsonArray()) {
+            ResourceLocation id = parseId(entry.getAsString());
+            if (id == null) {
+                Expandia.LOGGER.warn("Expandia: skipping invalid id '{}'", entry);
+            } else {
+                ids.add(id);
+            }
+        }
+        return ids;
     }
 
     public static JsonObject toJson(ExpandiaConfig config) {
         JsonObject json = new JsonObject();
         json.addProperty("baseRadius", config.baseRadius());
         json.addProperty("transitionWidth", config.transitionWidth());
-
-        com.google.gson.JsonArray advancements = new com.google.gson.JsonArray();
-        config.advancements().forEach(id -> advancements.add(id.toString()));
-        json.add("advancements", advancements);
+        json.add("overworld", packToJson(config.overworld()));
+        json.add("nether", packToJson(config.nether()));
         return json;
+    }
+
+    private static JsonObject packToJson(ExpandiaConfig.DimensionPack pack) {
+        JsonObject json = new JsonObject();
+        json.add("advancements", toArray(pack.advancements()));
+        return json;
+    }
+
+    private static JsonArray toArray(List<ResourceLocation> ids) {
+        JsonArray array = new JsonArray();
+        ids.forEach(id -> array.add(id.toString()));
+        return array;
     }
 
     private static int getInt(JsonObject json, String key, int fallback) {
@@ -119,7 +179,7 @@ public final class ExpandiaConfigManager {
     }
 
     @Nullable
-    private static Identifier parseId(String value) {
-        return Identifier.tryParse(value);
+    private static ResourceLocation parseId(String value) {
+        return ResourceLocation.tryParse(value);
     }
 }

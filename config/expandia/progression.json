@@ -1,5 +1,5 @@
 {
-  "baseRadius": 96,
+  "baseRadius": 32,
   "transitionWidth": 24,
   "advancements": [
     "minecraft:story/mine_stone",
@@ -10,8 +10,6 @@
     "minecraft:story/obtain_armor",
     "minecraft:story/lava_bucket",
     "minecraft:story/form_obsidian",
-    "minecraft:story/enter_the_nether",
-    "minecraft:nether/root",
     "minecraft:nether/obtain_blaze_rod",
     "minecraft:nether/find_fortress",
     "minecraft:story/enchant_item",
