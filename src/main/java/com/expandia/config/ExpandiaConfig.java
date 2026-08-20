@@ -24,7 +24,7 @@ public record ExpandiaConfig(
         public DimensionPack {
             List<ResourceLocation> filtered = new ArrayList<>();
             for (ResourceLocation id : advancements) {
-                if (!isNetherEntryAdvancement(id)) {
+                if (!isNetherEntryAdvancement(id) && !isRootAdvancement(id)) {
                     filtered.add(id);
                 }
             }
@@ -58,6 +58,7 @@ public record ExpandiaConfig(
 
     public boolean isIslandAdvancement(ResourceLocation advancement) {
         return !isNetherEntryAdvancement(advancement)
+                && !isRootAdvancement(advancement)
                 && (isOverworldAdvancement(advancement) || isNetherAdvancement(advancement));
     }
 
@@ -75,6 +76,15 @@ public record ExpandiaConfig(
         String key = advancement.toString();
         return "minecraft:story/enter_the_nether".equals(key)
                 || "minecraft:nether/root".equals(key);
+    }
+
+    /**
+     * Root advancements ("*\/root") are granted automatically in early survival
+     * (e.g. eating anything grants husbandry/root, killing a mob grants adventure/root),
+     * so they must never award an island.
+     */
+    public static boolean isRootAdvancement(ResourceLocation advancement) {
+        return advancement != null && advancement.getPath().endsWith("/root");
     }
 
     public List<ResourceLocation> allAdvancements() {
@@ -103,7 +113,6 @@ public record ExpandiaConfig(
                 "minecraft:story/form_obsidian",
                 "minecraft:story/enchant_item",
                 "minecraft:story/enter_the_end",
-                "minecraft:adventure/root",
                 "minecraft:adventure/sleep_in_bed",
                 "minecraft:adventure/kill_a_mob",
                 "minecraft:adventure/shoot_arrow",
@@ -142,7 +151,6 @@ public record ExpandiaConfig(
                 "minecraft:adventure/revaulting",
                 "minecraft:adventure/blowback",
                 "minecraft:adventure/overoverkill",
-                "minecraft:husbandry/root",
                 "minecraft:husbandry/plant_seed",
                 "minecraft:husbandry/breed_an_animal",
                 "minecraft:husbandry/tame_an_animal",
@@ -168,7 +176,6 @@ public record ExpandiaConfig(
                 "minecraft:husbandry/complete_catalogue",
                 "minecraft:husbandry/bred_all_animals",
                 "minecraft:husbandry/netherite_hoe",
-                "minecraft:end/root",
                 "minecraft:end/kill_dragon",
                 "minecraft:end/enter_end_city",
                 "minecraft:end/find_elytra",

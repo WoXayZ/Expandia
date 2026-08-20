@@ -97,19 +97,14 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
         if (cached != null) {
             return cached;
         }
+        // IMPORTANT: only pick biomes that are already part of the delegate's possibleBiomes().
+        // ChunkGenerator#featuresPerStep is memoized from that set, so returning any biome
+        // outside it makes applyBiomeDecoration do list.get(-1) -> crash + world corruption.
         Set<Holder<Biome>> unique = new LinkedHashSet<>();
         for (Holder<Biome> biome : this.delegate.possibleBiomes()) {
             if (isIslandBiome(biome)) {
                 unique.add(biome);
             }
-        }
-        HolderLookup.RegistryLookup<Biome> lookup = this.biomeLookup;
-        if (lookup != null) {
-            lookup.listElements().forEach(holder -> {
-                if (isIslandBiome(holder)) {
-                    unique.add(holder);
-                }
-            });
         }
 
         List<Holder<Biome>> pool = new ArrayList<>(unique);
@@ -142,10 +137,8 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
                 }
             }
         }
-        HolderLookup.RegistryLookup<Biome> lookup = this.biomeLookup;
-        if (lookup != null) {
-            return lookup.get(preferred).map(holder -> (Holder<Biome>) holder).orElse(pool.isEmpty() ? this.ocean : pool.get(0));
-        }
+        // Only ever return a biome from the pool (all in delegate.possibleBiomes());
+        // never fall back to the full registry, which would crash biome decoration.
         return pool.isEmpty() ? this.ocean : pool.get(0);
     }
 

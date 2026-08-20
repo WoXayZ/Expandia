@@ -9,7 +9,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ChunkMap;
-import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
@@ -237,7 +236,8 @@ public final class ExpandiaWorldGenInjector {
             return;
         }
         ChunkGenerator replacement = new ExpandiaNoiseChunkGenerator(noise.getBiomeSource(), noise.generatorSettings());
-        replaceTypedField(level.getChunkSource(), ServerChunkCache.class, ChunkGenerator.class, replacement);
+        // ServerChunkCache has no ChunkGenerator field in 1.21.1 (it delegates to chunkMap.generator()),
+        // so only the ChunkMap holds the instance. Replacing it there is enough and getGenerator() follows.
         replaceTypedField(level.getChunkSource().chunkMap, ChunkMap.class, ChunkGenerator.class, replacement);
         Expandia.LOGGER.info("Expandia: {} generator uses empty blender (no spawn-square chopping)",
                 level.dimension().location());

@@ -14,7 +14,6 @@
     "minecraft:nether/find_fortress",
     "minecraft:story/enchant_item",
     "minecraft:story/enter_the_end",
-    "minecraft:end/root",
     "minecraft:end/kill_dragon"
   ]
 }
