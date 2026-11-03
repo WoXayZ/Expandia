@@ -145,7 +145,7 @@ public final class ExpandiaChunkRegenerator {
                 for (int y = minY; y < maxY; y++) {
                     BlockState stateBlock = proto.getBlockState(cursor.set(x, y, z));
                     live.getSection(live.getSectionIndex(y))
-                            .setBlockState(localX, SectionPos.sectionRelative(y), localZ, stateBlock, false);
+                            .setBlockState(localX, SectionPos.sectionRelative(y), localZ, stateBlock, true);
                 }
             }
         }
@@ -230,7 +230,7 @@ public final class ExpandiaChunkRegenerator {
                         stateBlock = air;
                     }
                     live.getSection(live.getSectionIndex(y))
-                            .setBlockState(localX, SectionPos.sectionRelative(y), localZ, stateBlock, false);
+                            .setBlockState(localX, SectionPos.sectionRelative(y), localZ, stateBlock, true);
                 }
             }
         }
@@ -282,7 +282,13 @@ public final class ExpandiaChunkRegenerator {
             return;
         }
 
+        for (LevelChunkSection section : chunk.getSections()) {
+            section.recalcBlockCounts();
+        }
         try {
+            // Re-send the chunk in place. Forgetting it first unloaded the mesh and
+            // looked like a wipe until the new packet arrived.
+            viewer.connection.chunkSender.markChunkPendingToSend(chunk);
             viewer.connection.send(new ClientboundLevelChunkWithLightPacket(
                     chunk,
                     level.getLightEngine(),

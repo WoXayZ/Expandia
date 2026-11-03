@@ -1,5 +1,7 @@
 package com.expandia.worldgen;
 
+import com.expandia.Expandia;
+import com.google.common.collect.ImmutableSet;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -36,6 +38,7 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
     private volatile HolderLookup.RegistryLookup<Biome> biomeLookup;
     private volatile long worldSeed;
     private volatile List<Holder<Biome>> islandBiomes;
+    private volatile Set<Holder<Biome>> possibleBiomeCache;
 
     public ExpandiaOceanBiomeSource(BiomeSource delegate, Holder<Biome> ocean, boolean nether) {
         this.delegate = delegate;
@@ -59,6 +62,17 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
         this.biomeLookup = biomes;
         this.worldSeed = seed;
         this.islandBiomes = null;
+        this.possibleBiomeCache = null;
+        List<Holder<Biome>> pool = islandBiomes();
+        int modded = 0;
+        for (Holder<Biome> biome : pool) {
+            if (biome.unwrapKey().map(key -> !"minecraft".equals(key.location().getNamespace())).orElse(false)) {
+                modded++;
+            }
+        }
+        Expandia.LOGGER.info(
+                "Expandia: {} island biomes ready ({} from other mods)",
+                pool.size(), modded);
     }
 
     @Override
@@ -68,8 +82,22 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
 
     @Override
     protected Stream<Holder<Biome>> collectPossibleBiomes() {
-        return Stream.concat(islandBiomes().stream(), Stream.concat(this.delegate.possibleBiomes().stream(), Stream.of(this.ocean)))
-                .distinct();
+        return possibleBiomes().stream();
+    }
+
+    @Override
+    public Set<Holder<Biome>> possibleBiomes() {
+        Set<Holder<Biome>> cached = this.possibleBiomeCache;
+        if (cached != null) {
+            return cached;
+        }
+        ImmutableSet.Builder<Holder<Biome>> builder = ImmutableSet.builder();
+        builder.addAll(islandBiomes());
+        builder.add(this.ocean);
+        builder.addAll(this.delegate.possibleBiomes());
+        cached = builder.build();
+        this.possibleBiomeCache = cached;
+        return cached;
     }
 
     @Override
@@ -80,9 +108,24 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
         if (!state.isWithinIslandReach(blockX, blockZ)) {
             return this.ocean;
         }
+        Holder<Biome> island = biomeAt(blockX, blockZ);
+        if (island != null) {
+            return island;
+        }
+        return this.delegate.getNoiseBiome(quartX, quartY, quartZ, sampler);
+    }
+
+    /**
+     * One biome for the whole island. {@code null} outside the shore, or when the pool is empty.
+     */
+    public Holder<Biome> biomeAt(int blockX, int blockZ) {
+        ExpandiaRadiusState.DimState state = dimState();
+        if (!state.isWithinIslandReach(blockX, blockZ)) {
+            return null;
+        }
         List<Holder<Biome>> biomes = islandBiomes();
         if (biomes.isEmpty()) {
-            return this.delegate.getNoiseBiome(quartX, quartY, quartZ, sampler);
+            return null;
         }
         int slot = state.nearestIslandSlot(blockX, blockZ);
         return biomes.get(Math.floorMod(slot, biomes.size()));
@@ -97,11 +140,11 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
         if (cached != null) {
             return cached;
         }
-        // IMPORTANT: only pick biomes that are already part of the delegate's possibleBiomes().
-        // ChunkGenerator#featuresPerStep is memoized from that set, so returning any biome
-        // outside it makes applyBiomeDecoration do list.get(-1) -> crash + world corruption.
+        // The delegate only knows the vanilla climate list. Mod biomes (Natura Reimagined
+        // via TerraBlender, and anything else tagged is_overworld / is_nether) live in the
+        // registry and would never be chosen from possibleBiomes() alone.
         Set<Holder<Biome>> unique = new LinkedHashSet<>();
-        for (Holder<Biome> biome : this.delegate.possibleBiomes()) {
+        for (Holder<Biome> biome : biomeCandidates()) {
             if (isIslandBiome(biome)) {
                 unique.add(biome);
             }
@@ -158,7 +201,17 @@ public final class ExpandiaOceanBiomeSource extends BiomeSource {
         if (this.nether) {
             return biome.is(BiomeTags.IS_NETHER);
         }
-        return !biome.is(BiomeTags.IS_NETHER);
+        return biome.is(BiomeTags.IS_OVERWORLD);
+    }
+
+    private Iterable<Holder<Biome>> biomeCandidates() {
+        LinkedHashSet<Holder<Biome>> all = new LinkedHashSet<>();
+        HolderLookup.RegistryLookup<Biome> lookup = this.biomeLookup;
+        if (lookup != null) {
+            lookup.listElements().forEach(all::add);
+        }
+        all.addAll(this.delegate.possibleBiomes());
+        return all;
     }
 
     private static boolean isUndergroundBiome(Holder<Biome> biome) {

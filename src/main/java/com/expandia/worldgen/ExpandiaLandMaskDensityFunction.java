@@ -16,12 +16,16 @@ public record ExpandiaLandMaskDensityFunction(
 
     private static final double OCEAN_CONTINENTS = -0.95D;
     private static final double CORE_LAND_FLOOR = 0.15D;
-    private static final double COAST_LAND_FLOOR = 0.00D;
-    private static final double FOREST_CORE_RADIUS = 14.0D;
+    private static final double COAST_LAND_FLOOR = -0.08D;
 
-    /** Vanilla offset band for dry, moderate-height island terrain (~128 blocks per +1.0 offset). */
-    private static final double ISLAND_MIN_OFFSET = -0.42D;
-    private static final double ISLAND_MAX_OFFSET = -0.30D;
+    /**
+     * Surface height is about {@code 128 + offset * 128}. Sea level 63 is -0.508.
+     * Hills stay inland; the rim is only a few blocks above the water so the shore
+     * can slope down instead of falling off in dirt terraces.
+     */
+    private static final double HILL_OFFSET_MIN = -0.46D;
+    private static final double HILL_OFFSET_MAX = -0.36D;
+    private static final double RIM_OFFSET = -0.47D;
 
     public enum MaskMode implements StringRepresentable {
         CONTINENTS("continents"),
@@ -65,7 +69,7 @@ public record ExpandiaLandMaskDensityFunction(
 
         int radius = state.getIslandRadius();
         return switch (this.mode) {
-            case CONTINENTS -> maskContinents(context, radius);
+            case CONTINENTS -> maskContinents(context);
             case EROSION -> maskErosion(context, radius);
             case TEMPERATURE -> maskTemperature(context, radius);
             case VEGETATION -> maskVegetation(context, radius);
@@ -79,26 +83,24 @@ public record ExpandiaLandMaskDensityFunction(
     }
 
     private double maskFinal(FunctionContext context) {
-        double vanilla = this.wrapped.compute(context);
-        double blend = ExpandiaRadiusState.NETHER.oceanBlend(context.blockX(), context.blockZ());
+        int x = context.blockX();
         int y = context.blockY();
+        int z = context.blockZ();
         int sea = this.seaLevel;
+        double blend = ExpandiaRadiusState.NETHER.oceanBlend(x, z);
         double ocean = lavaOcean(y, sea);
         if (blend >= 1.0D) {
             return ocean;
         }
 
-        int roof = sea + 40;
-        if (y >= roof + 16) {
-            vanilla = -1.0D;
-        } else if (y > roof) {
-            vanilla = Mth.lerp((double) (y - roof) / 16.0D, vanilla, -1.0D);
+        int surface = ExpandiaRadiusState.NETHER.islandSurfaceY(x, z, sea);
+        // Hold a dry shell above the lava, then drop into the sea only at the outer rim.
+        double rim = Mth.lerp(smootherStep(0.0D, 0.85D, blend), surface, sea + 5.0D);
+        double island = (rim - y) / 4.0D;
+        if (blend <= 0.75D) {
+            return island;
         }
-
-        if (blend <= 0.0D) {
-            return vanilla;
-        }
-        return Mth.lerp(blend, vanilla, ocean);
+        return Mth.lerp(smootherStep(0.75D, 1.0D, blend), island, ocean);
     }
 
     private static double lavaOcean(int y, int sea) {
@@ -115,46 +117,48 @@ public record ExpandiaLandMaskDensityFunction(
         double vanillaOffset = this.wrapped.compute(context);
         int x = context.blockX();
         int z = context.blockZ();
-        double blend = oceanBlend(x, z, radius);
+        double blend = oceanBlend(x, z);
         if (blend >= 1.0D) {
             return vanillaOffset;
         }
-        double islandOffset = Mth.clamp(vanillaOffset, ISLAND_MIN_OFFSET, ISLAND_MAX_OFFSET);
+        double dist = ExpandiaRadiusState.nearestCenterDistance(x, z);
+        double edge = Math.max(1.0D, radius);
+        double inland = 1.0D - smootherStep(edge * 0.2D, edge, dist);
+        double hill = Mth.clamp(vanillaOffset, HILL_OFFSET_MIN, HILL_OFFSET_MAX);
+        double islandOffset = Mth.lerp(inland, RIM_OFFSET, hill);
         if (blend <= 0.0D) {
             return islandOffset;
         }
-        return Mth.lerp(blend, islandOffset, vanillaOffset);
+        // Sea level, then a short underwater drop. The above-water part stays a beach.
+        double seaOffset = (this.seaLevel - 128.0D) / 128.0D;
+        double beach = Mth.lerp(smootherStep(0.0D, 0.8D, blend), islandOffset, seaOffset);
+        double oceanFloor = Math.min(vanillaOffset, seaOffset - 0.12D);
+        return Mth.lerp(smootherStep(0.8D, 1.0D, blend), beach, oceanFloor);
     }
 
-    private static double oceanBlend(int x, int z, int radius) {
+    private static double oceanBlend(int x, int z) {
         return ExpandiaRadiusState.oceanBlend(x, z);
     }
 
-    private double maskContinents(FunctionContext context, int radius) {
+    private double maskContinents(FunctionContext context) {
         double vanilla = this.wrapped.compute(context);
-        double blend = oceanBlend(context.blockX(), context.blockZ(), radius);
-        double land = landContinents(context.blockX(), context.blockZ(), vanilla, blend);
+        double blend = oceanBlend(context.blockX(), context.blockZ());
+        double floor = interiorLandFloor(context.blockX(), context.blockZ());
+        // Cap inland continents so the coast spline cannot jump into mountain terrain.
+        double land = Mth.clamp(Math.max(vanilla, floor), -0.2D, 0.22D);
         return Mth.lerp(blend, land, OCEAN_CONTINENTS);
-    }
-
-    private static double landContinents(int x, int z, double vanilla, double blend) {
-        double solidLand = Math.max(vanilla, interiorLandFloor(x, z));
-        return Mth.lerp(Math.min(blend * 2.0D, 1.0D), solidLand, Mth.clamp(vanilla, OCEAN_CONTINENTS, 0.1D));
     }
 
     private static double interiorLandFloor(int x, int z) {
         double dist = ExpandiaRadiusState.nearestCenterDistance(x, z);
-        int radius = ExpandiaRadiusState.getIslandRadius();
-        int transition = ExpandiaRadiusState.getTransitionWidth();
-        double coastInner = Math.max(FOREST_CORE_RADIUS, (double) radius - transition);
-        double t = smootherStep(0.0D, coastInner, dist);
+        int radius = Math.max(1, ExpandiaRadiusState.getIslandRadius());
+        double t = smootherStep(radius * 0.62D, radius, dist);
         return Mth.lerp(t, CORE_LAND_FLOOR, COAST_LAND_FLOOR);
     }
 
     private double maskErosion(FunctionContext context, int radius) {
         double vanilla = this.wrapped.compute(context);
-        double blend = oceanBlend(context.blockX(), context.blockZ(), radius);
-        return Mth.lerp(blend, vanilla, 0.0D);
+        return Mth.lerp(oceanBlend(context.blockX(), context.blockZ()), vanilla, 0.0D);
     }
 
     private double maskTemperature(FunctionContext context, int radius) {
@@ -182,12 +186,20 @@ public record ExpandiaLandMaskDensityFunction(
 
     @Override
     public double minValue() {
-        return OCEAN_CONTINENTS;
+        double wrappedMin = this.wrapped.minValue();
+        if (this.mode == MaskMode.FINAL) {
+            return Math.min(-1.0D, wrappedMin);
+        }
+        return Math.min(OCEAN_CONTINENTS, wrappedMin);
     }
 
     @Override
     public double maxValue() {
-        return this.wrapped.maxValue();
+        double wrappedMax = this.wrapped.maxValue();
+        if (this.mode == MaskMode.FINAL) {
+            return Math.max(64.0D, wrappedMax);
+        }
+        return Math.max(wrappedMax, CORE_LAND_FLOOR);
     }
 
     @Override

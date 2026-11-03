@@ -9,19 +9,11 @@ import net.minecraft.world.level.levelgen.GenerationStep;
 import net.neoforged.neoforge.common.world.BiomeModifier;
 import net.neoforged.neoforge.common.world.ModifiableBiomeInfo;
 
-import java.util.EnumSet;
-import java.util.Set;
-
 public record ExpandiaStripWorldgenModifier(HolderSet<Biome> biomes) implements BiomeModifier {
 
     public static final MapCodec<ExpandiaStripWorldgenModifier> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
             Biome.LIST_CODEC.fieldOf("biomes").forGetter(ExpandiaStripWorldgenModifier::biomes)
     ).apply(instance, ExpandiaStripWorldgenModifier::new));
-
-    private static final Set<GenerationStep.Decoration> KEEP = EnumSet.of(
-            GenerationStep.Decoration.VEGETAL_DECORATION,
-            GenerationStep.Decoration.TOP_LAYER_MODIFICATION
-    );
 
     @Override
     public void modify(Holder<Biome> biome, Phase phase, ModifiableBiomeInfo.BiomeInfo.Builder builder) {
@@ -31,10 +23,14 @@ public record ExpandiaStripWorldgenModifier(HolderSet<Biome> biomes) implements 
         for (GenerationStep.Carving step : GenerationStep.Carving.values()) {
             builder.getGenerationSettings().getCarvers(step).clear();
         }
+        // Snow is applied later from the island biome, not from this chunk's palette.
+        // Vanilla freeze_top_layer follows whatever biome ended up in the chunk, which
+        // cuts a snow square exactly on the chunk border.
         for (GenerationStep.Decoration step : GenerationStep.Decoration.values()) {
-            if (!KEEP.contains(step)) {
-                builder.getGenerationSettings().getFeatures(step).clear();
+            if (step == GenerationStep.Decoration.VEGETAL_DECORATION) {
+                continue;
             }
+            builder.getGenerationSettings().getFeatures(step).clear();
         }
     }
 

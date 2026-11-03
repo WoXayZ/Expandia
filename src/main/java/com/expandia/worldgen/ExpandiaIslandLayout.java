@@ -8,7 +8,7 @@ public final class ExpandiaIslandLayout {
     private static final double GOLDEN_ANGLE = Math.PI * (3.0D - Math.sqrt(5.0D));
     private static final double PHYLLOTAXIS_MIN_RATIO = 1.6532D;
     private static final double RADIAL_OFFSET = 2.0D;
-    public static final int OVERWORLD_OCEAN_GAP = 96;
+    public static final int OVERWORLD_OCEAN_GAP = 32;
     public static final int NETHER_OCEAN_GAP = 48;
 
     private ExpandiaIslandLayout() {
@@ -19,7 +19,9 @@ public final class ExpandiaIslandLayout {
     }
 
     public static double spacing(int islandRadius, int transitionWidth, int oceanGap) {
-        return 2.0D * islandRadius + oceanGap;
+        // The shore ring sits outside the solid radius. The ocean gap is open
+        // water between shores, so neighbouring islands cannot slice each other.
+        return 2.0D * (islandRadius + transitionWidth) + oceanGap;
     }
 
     public static double[] center(int index, int islandRadius, int transitionWidth, int oceanGap) {

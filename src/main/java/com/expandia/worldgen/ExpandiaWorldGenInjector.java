@@ -16,6 +16,7 @@ import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.chunk.ChunkGeneratorStructureState;
+import net.minecraft.world.level.chunk.status.WorldGenContext;
 import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.levelgen.DensityFunctions;
 import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
@@ -33,7 +34,9 @@ import sun.misc.Unsafe;
 
 import org.jetbrains.annotations.Nullable;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.RecordComponent;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
@@ -111,6 +114,8 @@ public final class ExpandiaWorldGenInjector {
         } catch (Exception e) {
             Expandia.LOGGER.error("Expandia: could not replace chunk generator for {}", level.dimension().location(), e);
         }
+        // featuresPerStep is cached from the biome list. Rebuild it after mod biomes are included.
+        level.getChunkSource().getGenerator().refreshFeaturesPerStep();
     }
 
     private static void pinNetherSpawn(MinecraftServer server) {
@@ -236,11 +241,36 @@ public final class ExpandiaWorldGenInjector {
             return;
         }
         ChunkGenerator replacement = new ExpandiaNoiseChunkGenerator(noise.getBiomeSource(), noise.generatorSettings());
-        // ServerChunkCache has no ChunkGenerator field in 1.21.1 (it delegates to chunkMap.generator()),
-        // so only the ChunkMap holds the instance. Replacing it there is enough and getGenerator() follows.
-        replaceTypedField(level.getChunkSource().chunkMap, ChunkMap.class, ChunkGenerator.class, replacement);
+        // ChunkMap keeps the generator inside a WorldGenContext record. Java 21 refuses
+        // field offsets on record components, so the whole context is swapped instead.
+        ChunkMap chunkMap = level.getChunkSource().chunkMap;
+        Field contextField = ChunkMap.class.getDeclaredField("worldGenContext");
+        contextField.setAccessible(true);
+        Object context = contextField.get(chunkMap);
+        if (!(context instanceof WorldGenContext previous)) {
+            throw new NoSuchFieldException("ChunkMap.worldGenContext is " + (context == null ? "null" : context.getClass().getName()));
+        }
+        WorldGenContext updated = withGenerator(previous, replacement);
+        replaceField(chunkMap, contextField, updated);
         Expandia.LOGGER.info("Expandia: {} generator uses empty blender (no spawn-square chopping)",
                 level.dimension().location());
+    }
+
+    private static WorldGenContext withGenerator(WorldGenContext previous, ChunkGenerator replacement) throws Exception {
+        RecordComponent[] components = WorldGenContext.class.getRecordComponents();
+        Class<?>[] types = new Class<?>[components.length];
+        Object[] args = new Object[components.length];
+        for (int i = 0; i < components.length; i++) {
+            types[i] = components[i].getType();
+            Object value = components[i].getAccessor().invoke(previous);
+            if (ChunkGenerator.class.isAssignableFrom(types[i])) {
+                value = replacement;
+            }
+            args[i] = value;
+        }
+        Constructor<?> constructor = WorldGenContext.class.getDeclaredConstructor(types);
+        constructor.setAccessible(true);
+        return (WorldGenContext) constructor.newInstance(args);
     }
 
     private static DensityFunction maskDensity(

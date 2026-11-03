@@ -16,6 +16,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.AdvancementEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 @EventBusSubscriber(modid = ExpandiaConstants.MOD_ID)
@@ -27,6 +28,11 @@ public final class ExpandiaProgressionEvents {
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         ExpandiaProgressionManager.syncRuntimeState(event.getServer());
+    }
+
+    @SubscribeEvent
+    public static void onServerStopping(ServerStoppingEvent event) {
+        ExpandiaChunkRegenManager.discard();
     }
 
     @SubscribeEvent

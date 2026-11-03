@@ -76,8 +76,6 @@ public final class ExpandiaRadiusState {
     }
 
     public static final class DimState {
-        private static final double FOREST_CORE_RADIUS = 14.0D;
-
         private final boolean nether;
         private final int oceanGap;
         private volatile int islandRadius = 64;
@@ -173,17 +171,22 @@ public final class ExpandiaRadiusState {
             if (!active || islandRadius <= 0) {
                 return 1.0D;
             }
-            int transition = transitionWidth;
-            double dist = Math.max(0.0D, nearestCenterDistance(x, z) + boundaryWobble(x, z, transition));
-            double coastInner = Math.max(FOREST_CORE_RADIUS, (double) islandRadius - transition);
-            double coastOuter = (double) islandRadius + transition;
-            if (dist <= coastInner) {
+            double raw = nearestCenterDistance(x, z);
+            double solidEdge = islandRadius;
+            // The whole configured radius stays land. Shore noise only wiggles
+            // the ring outside that disc, so it cannot slice the island open.
+            if (raw <= solidEdge) {
                 return 0.0D;
             }
+            double dist = raw + boundaryWobble(x, z, transitionWidth);
+            if (dist < solidEdge) {
+                dist = solidEdge;
+            }
+            double coastOuter = solidEdge + transitionWidth;
             if (dist >= coastOuter) {
                 return 1.0D;
             }
-            return smootherStep(coastInner, coastOuter, dist);
+            return smootherStep(solidEdge, coastOuter, dist);
         }
 
         public double nearestCenterDistance(int x, int z) {
@@ -211,9 +214,12 @@ public final class ExpandiaRadiusState {
             double dome = Math.pow(Math.max(0.0D, 1.0D - t * t), nether ? 0.55D : 1.35D);
             double wobble = (Math.sin(x * 0.08D) * Math.cos(z * 0.05D)
                     + Math.sin(x * 0.13D + z * 0.09D) * 0.45D) * (nether ? 3.0D : 3.5D) * dome;
-            double peak = nether ? Math.min(10.0D, radius * 0.32D) : 8.0D;
-            double height = peak * dome * (1.0D - blend * 0.7D) + wobble;
-            return (int) Math.round(seaLevel + Math.max(nether ? 2.0D : 2.0D, height));
+            double peak = nether ? Math.min(12.0D, radius * 0.4D) : 8.0D;
+            double height = peak * dome * (1.0D - blend) + wobble * (1.0D - blend);
+            // Nether shores stay above the vanilla lava band (roughly sea-2..sea+3),
+            // where basalt, gravel and soul sand would otherwise generate under the lava.
+            double clearance = nether ? Mth.lerp(blend, 8.0D, 5.0D) : 2.0D;
+            return (int) Math.round(seaLevel + Math.max(clearance, height));
         }
 
         public boolean isActive() {

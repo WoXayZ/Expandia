@@ -61,7 +61,7 @@ gradle wrapper --gradle-version 9.1
 ./gradlew build
 ```
 
-The packaged jar lands in `build/libs/expandia-neoforge-1.21.1-<version>+mc1.21.1.jar`.
+The packaged jar lands in `build/libs/expandia-neoforge-1.21.1-<version>.jar`.
 
 Run the dev client/server:
 
@@ -207,7 +207,7 @@ current islands, and `ExpandiaChunkRegenManager` rebuilds the affected discs so 
 ## Publishing to CurseForge
 
 1. `./gradlew build`
-2. Upload `build/libs/expandia-neoforge-1.21.1-<version>+mc1.21.1.jar`.
+2. Upload `build/libs/expandia-neoforge-1.21.1-<version>.jar`.
 3. Set the game version to **1.21.1**, modloader **NeoForge**, and mark Terralith as an optional
    dependency.
 
